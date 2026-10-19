@@ -1,0 +1,20 @@
+rules_version = '2';
+
+// Webcam snapshots: candidate may create (never overwrite/delete) small JPEGs in their own folder.
+// The API validates that the path recorded in Firestore matches proctoring/{examId}/{uid}/.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /proctoring/{examId}/{uid}/{fileName} {
+      allow create: if request.auth != null
+                    && request.auth.uid == uid
+                    && request.auth.token.firebase.sign_in_provider == 'google.com'
+                    && fileName.matches('^[0-9]{10,16}\\.jpg$')
+                    && request.resource.contentType == 'image/jpeg'
+                    && request.resource.size < 300 * 1024;
+      allow read: if request.auth != null
+                  && request.auth.token.role == 'examiner'
+                  && firestore.get(/databases/(default)/documents/exams/$(examId)).data.createdBy == request.auth.uid;
+      allow update, delete: if false;
+    }
+  }
+}

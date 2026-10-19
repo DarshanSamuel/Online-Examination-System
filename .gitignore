@@ -1,0 +1,24 @@
+# Dependencies & build output
+node_modules/
+dist/
+.vercel/
+.firebase/
+*.tsbuildinfo
+
+# Secrets — never commit these
+.env
+.env.*
+!.env.example
+*.pem
+serviceAccount*.json
+*-firebase-adminsdk-*.json
+firebase-key*.json
+
+# Logs / OS / editor
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json

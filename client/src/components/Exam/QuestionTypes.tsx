@@ -1,6 +1,8 @@
+import type { ReactNode } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useExamStore } from '../../store/examStore';
 import type { McqQuestion, NumericalQuestion } from '../../types/exam';
-import { card } from '../ui/styles';
+import { btnGhost, card } from '../ui/styles';
 import { cn } from '../../lib/utils';
 
 export function QuestionHeader({ title, points, index }: { title: string; points: number; index: number }) {
@@ -21,6 +23,47 @@ export function Prompt({ text }: { text: string }) {
   // Plain text with preserved line breaks. Swap for a sanitized markdown renderer if needed —
   // never dangerouslySetInnerHTML with examiner-authored HTML.
   return <p className="whitespace-pre-wrap leading-relaxed text-slate-700">{text}</p>;
+}
+
+export function AnswerFooterNav({ extraAction, className }: { extraAction?: ReactNode; className?: string }) {
+  const currentIndex = useExamStore((s) => s.currentIndex);
+  const total = useExamStore((s) => s.questions.length);
+  const goTo = useExamStore((s) => s.goTo);
+
+  return (
+    <div
+      className={cn(
+        'mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/80 pt-4',
+        className,
+      )}
+    >
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => goTo(currentIndex - 1)}
+          disabled={currentIndex === 0}
+          className={btnGhost}
+        >
+          <ChevronLeft className="h-4 w-4" /> Previous
+        </button>
+        {extraAction}
+      </div>
+
+      <div className="flex items-center gap-3">
+        <span className="hidden text-xs font-medium text-slate-400 sm:inline">
+          Question {currentIndex + 1} of {total}
+        </span>
+        <button
+          type="button"
+          onClick={() => goTo(currentIndex + 1)}
+          disabled={currentIndex === total - 1}
+          className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:bg-slate-800 active:translate-y-0 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40 dark:bg-primary-600 dark:hover:bg-primary-500"
+        >
+          Next <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export function MCQQuestion({ question, index }: { question: McqQuestion; index: number }) {
@@ -69,14 +112,19 @@ export function MCQQuestion({ question, index }: { question: McqQuestion; index:
         })}
       </fieldset>
 
-      {selected && (
-        <button
-          onClick={() => saveAnswer(question.questionId, { type: 'mcq', selectedOptionId: null })}
-          className="animate-tab-enter mt-4 cursor-pointer text-sm font-medium text-slate-500 underline-offset-2 transition-colors hover:text-slate-800 hover:underline"
-        >
-          Clear selection
-        </button>
-      )}
+      <AnswerFooterNav
+        extraAction={
+          selected ? (
+            <button
+              type="button"
+              onClick={() => saveAnswer(question.questionId, { type: 'mcq', selectedOptionId: null })}
+              className="animate-tab-enter cursor-pointer text-sm font-medium text-slate-500 underline-offset-2 transition-colors hover:text-slate-800 hover:underline"
+            >
+              Clear selection
+            </button>
+          ) : undefined
+        }
+      />
     </div>
   );
 }
@@ -111,6 +159,20 @@ export function NumericalQuestion({ question, index }: { question: NumericalQues
         {question.unit && <span className="pr-4 text-sm font-medium text-slate-500">{question.unit}</span>}
       </div>
       <p className="mt-2 text-xs text-slate-500">Numbers only. Scientific notation like 1.2e-3 is accepted.</p>
+
+      <AnswerFooterNav
+        extraAction={
+          value ? (
+            <button
+              type="button"
+              onClick={() => saveAnswer(question.questionId, { type: 'numerical', value: '' })}
+              className="animate-tab-enter cursor-pointer text-sm font-medium text-slate-500 underline-offset-2 transition-colors hover:text-slate-800 hover:underline"
+            >
+              Clear answer
+            </button>
+          ) : undefined
+        }
+      />
     </div>
   );
 }

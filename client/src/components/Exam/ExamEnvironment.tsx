@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ChevronLeft, ChevronRight, Cloud, CloudOff, Loader2, Send, ShieldAlert } from 'lucide-react';
+import { Cloud, CloudOff, Loader2, Send, ShieldAlert } from 'lucide-react';
 import { useExamStore, type SyncStatus } from '../../store/examStore';
 import { useNetworkSync } from '../../hooks/useNetworkSync';
 import { flushProctorEvents, resetProctorQueue } from '../../lib/proctorQueue';
@@ -11,7 +11,7 @@ import { MCQQuestion, NumericalQuestion } from './QuestionTypes';
 import { ExamEnded } from './ExamEnded';
 import { FullPageSpinner } from '../ui/FullPageSpinner';
 import { ThemeToggle } from '../ui/ThemeToggle';
-import { btnGhost, btnPrimary } from '../ui/styles';
+import { btnGhost, btnPrimary, card } from '../ui/styles';
 import { cn } from '../../lib/utils';
 import { apiErrorMessage } from '../../lib/api';
 import type { LocalAnswer } from '../../types/exam';
@@ -109,50 +109,47 @@ export function ExamEnvironment({ submissionId }: { submissionId: string }) {
           </div>
         </header>
 
-        {/* Question body with smooth transition on question change */}
+        {/* Question body + dynamic navigator positioned right below the answer section */}
         <main className="min-h-0 flex-1 overflow-auto p-5">
           <div
-            key={q.questionId}
-            className={cn('animate-tab-enter mx-auto h-full', q.type === 'coding' ? 'max-w-[1600px]' : 'max-w-3xl')}
+            className={cn('mx-auto space-y-4 pb-8', q.type === 'coding' ? 'max-w-[1600px]' : 'max-w-3xl')}
           >
-            {q.type === 'mcq' && <MCQQuestion question={q} index={s.currentIndex} />}
-            {q.type === 'numerical' && <NumericalQuestion question={q} index={s.currentIndex} />}
-            {q.type === 'coding' && <CodeEditor question={q} index={s.currentIndex} />}
+            <div key={q.questionId} className="animate-tab-enter">
+              {q.type === 'mcq' && <MCQQuestion question={q} index={s.currentIndex} />}
+              {q.type === 'numerical' && <NumericalQuestion question={q} index={s.currentIndex} />}
+              {q.type === 'coding' && <CodeEditor question={q} index={s.currentIndex} />}
+            </div>
+
+            {/* Dynamic Question Palette directly below the question card */}
+            <nav
+              aria-label="Question navigator"
+              className={cn(card, 'flex flex-wrap items-center justify-between gap-3 px-5 py-3.5')}
+            >
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Questions ({answeredCount}/{s.questions.length} answered)
+              </span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {s.questions.map((x, i) => (
+                  <button
+                    key={x.questionId}
+                    onClick={() => s.goTo(i)}
+                    title={`${x.type.toUpperCase()} · ${x.points} pts`}
+                    className={cn(
+                      'h-8.5 w-8.5 cursor-pointer rounded-xl text-sm font-semibold transition-all duration-200 ease-out active:scale-90',
+                      i === s.currentIndex
+                        ? 'bg-primary-600 text-white shadow-sm shadow-primary-600/30 scale-105'
+                        : isAnswered(s.answers[x.questionId])
+                          ? 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200 hover:bg-emerald-100'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200',
+                    )}
+                  >
+                    {i + 1}
+                  </button>
+                ))}
+              </div>
+            </nav>
           </div>
         </main>
-
-        {/* Navigator */}
-        <footer className="flex shrink-0 items-center justify-between gap-4 border-t border-slate-200/80 bg-white/90 px-5 py-3 backdrop-blur-md">
-          <button onClick={() => s.goTo(s.currentIndex - 1)} disabled={s.currentIndex === 0} className={btnGhost}>
-            <ChevronLeft className="h-4 w-4" /> Previous
-          </button>
-          <nav className="flex flex-wrap justify-center gap-1.5">
-            {s.questions.map((x, i) => (
-              <button
-                key={x.questionId}
-                onClick={() => s.goTo(i)}
-                title={`${x.type.toUpperCase()} · ${x.points} pts`}
-                className={cn(
-                  'h-8.5 w-8.5 cursor-pointer rounded-xl text-sm font-semibold transition-all duration-200 ease-out active:scale-90',
-                  i === s.currentIndex
-                    ? 'bg-primary-600 text-white shadow-sm shadow-primary-600/30 scale-105'
-                    : isAnswered(s.answers[x.questionId])
-                      ? 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200 hover:bg-emerald-100'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200',
-                )}
-              >
-                {i + 1}
-              </button>
-            ))}
-          </nav>
-          <button
-            onClick={() => s.goTo(s.currentIndex + 1)}
-            disabled={s.currentIndex === s.questions.length - 1}
-            className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:bg-slate-800 active:translate-y-0 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40 dark:bg-primary-600 dark:hover:bg-primary-500"
-          >
-            Next <ChevronRight className="h-4 w-4" />
-          </button>
-        </footer>
       </div>
 
       {confirming && (

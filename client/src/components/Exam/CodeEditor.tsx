@@ -7,7 +7,7 @@ import { useExamStore } from '../../store/examStore';
 import type { CodingQuestion, LanguageKey, RunResponse } from '../../types/exam';
 import { card } from '../ui/styles';
 import { cn } from '../../lib/utils';
-import { Prompt, QuestionHeader } from './QuestionTypes';
+import { AnswerFooterNav, Prompt, QuestionHeader } from './QuestionTypes';
 
 type Tab = 'tests' | 'custom';
 
@@ -105,7 +105,7 @@ export function CodeEditor({ question, index }: { question: CodingQuestion; inde
   };
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(320px,2fr)_3fr]">
+    <div className="grid min-h-0 grid-cols-1 gap-4 lg:h-[calc(100vh-190px)] lg:min-h-[580px] lg:grid-cols-[minmax(320px,2fr)_3fr]">
       {/* Problem statement */}
       <section className={cn(card, 'min-h-0 overflow-auto p-6')}>
         <QuestionHeader title={question.title} points={question.points} index={index} />
@@ -171,7 +171,7 @@ export function CodeEditor({ question, index }: { question: CodingQuestion; inde
           </div>
         </div>
 
-        <div className="min-h-0 flex-1">
+        <div className="min-h-[260px] flex-1">
           <Editor
             key={`${question.questionId}:${language}:${editorKey}`}
             height="100%"
@@ -197,7 +197,7 @@ export function CodeEditor({ question, index }: { question: CodingQuestion; inde
         </div>
 
         {/* Console */}
-        <div className="h-56 shrink-0 border-t border-slate-800 bg-slate-950 text-slate-200">
+        <div className="h-48 shrink-0 border-t border-slate-800 bg-slate-950 text-slate-200">
           <div className="flex border-b border-slate-800 px-2 pt-1.5 text-xs">
             {(['tests', 'custom'] as Tab[]).map((t) => (
               <button
@@ -256,6 +256,9 @@ export function CodeEditor({ question, index }: { question: CodingQuestion; inde
             )}
           </div>
         </div>
+
+        {/* Dynamic Previous / Next footer attached to the bottom of the answer/editor panel */}
+        <AnswerFooterNav className="mt-0 shrink-0 border-t border-slate-200/80 bg-white px-4 py-3" />
       </section>
     </div>
   );

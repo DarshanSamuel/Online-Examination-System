@@ -42,6 +42,18 @@ export interface StartResult {
   serverNow: number;
 }
 
+function toMillis(v: unknown): number {
+  if (v && typeof v === 'object') {
+    if (typeof (v as { toMillis?: unknown }).toMillis === 'function') {
+      return (v as Timestamp).toMillis();
+    }
+    const sec = (v as { seconds?: number; _seconds?: number }).seconds ?? (v as { _seconds?: number })._seconds;
+    const nano = (v as { nanoseconds?: number; _nanoseconds?: number }).nanoseconds ?? (v as { _nanoseconds?: number })._nanoseconds ?? 0;
+    if (typeof sec === 'number') return sec * 1000 + Math.floor(nano / 1_000_000);
+  }
+  return Date.now();
+}
+
 export async function startAttempt(user: AuthedUser, examId: string, client: { userAgent: string; ip: string | null }): Promise<StartResult> {
   const examRef = collections.exams.doc(examId);
   const asgRef = collections.assignments.doc(assignmentId(examId, user.email));
@@ -62,10 +74,12 @@ export async function startAttempt(user: AuthedUser, examId: string, client: { u
       return { submissionId: id, resumed: true, startedAt: sub.timing.startedAt.toMillis(), deadlineAt: sub.timing.deadlineAt.toMillis(), serverNow: nowMs };
     }
 
-    if (nowMs < exam.window.opensAt.toMillis()) throw new HttpError(403, 'Exam has not opened yet', 'EXAM_NOT_OPEN');
-    if (nowMs >= exam.window.closesAt.toMillis()) throw new HttpError(403, 'Exam window has closed', 'EXAM_CLOSED');
+    const opensMs = toMillis(exam.window.opensAt);
+    const closesMs = toMillis(exam.window.closesAt);
+    if (nowMs < opensMs) throw new HttpError(403, 'Exam has not opened yet', 'EXAM_NOT_OPEN');
+    if (nowMs >= closesMs) throw new HttpError(403, 'Exam window has closed', 'EXAM_CLOSED');
 
-    const deadlineMs = Math.min(nowMs + exam.durationMinutes * 60_000, exam.window.closesAt.toMillis());
+    const deadlineMs = Math.min(nowMs + exam.durationMinutes * 60_000, closesMs);
     const questionMap = await buildQuestionMap(tx, exam);
     const startedAt = Timestamp.fromMillis(nowMs);
 

@@ -6,7 +6,7 @@ import { ExaminerLayout } from '../../components/examiner/ExaminerLayout';
 import { useAuth } from '../../auth/AuthProvider';
 import { api, apiErrorMessage } from '../../lib/api';
 import { db } from '../../lib/firebase';
-import { assignCandidates, deleteDraftExam, downloadText, listQuestions, parseEmails, removeAssignment, resultsToCsv, setExamStatus } from '../../lib/examinerData';
+import { assignCandidates, deleteDraftExam, downloadText, listQuestions, normalizeExam, parseEmails, removeAssignment, resultsToCsv, setExamStatus } from '../../lib/examinerData';
 import type { Assignment, Exam, SimilarityReport, Submission } from '../../types/examiner';
 import { btnDanger, btnGhost, btnPrimary, btnSmall, card, input, statusTone } from '../../components/ui/styles';
 import { cn } from '../../lib/utils';
@@ -31,7 +31,7 @@ export function ExamDetail() {
     if (!examId) return;
     return onSnapshot(
       doc(db, 'exams', examId),
-      (s) => (s.exists() ? setExam({ id: s.id, ...(s.data() as Omit<Exam, 'id'>) }) : setMissing(true)),
+      (s) => (s.exists() ? setExam(normalizeExam(s.id, s.data() as Record<string, unknown>)) : setMissing(true)),
       () => setMissing(true),
     );
   }, [examId]);

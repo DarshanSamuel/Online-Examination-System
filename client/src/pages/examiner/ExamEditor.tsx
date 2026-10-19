@@ -5,8 +5,8 @@ import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { ExaminerLayout } from '../../components/examiner/ExaminerLayout';
 import { useAuth } from '../../auth/AuthProvider';
 import { db } from '../../lib/firebase';
-import { createExam, listQuestions, toLocalInput, updateExam, type ExamInput } from '../../lib/examinerData';
-import { ALL_LANGUAGES, type Exam, type ExamSection, type ExamSettings, type Question } from '../../types/examiner';
+import { createExam, listQuestions, normalizeExam, toLocalInput, updateExam, type ExamInput } from '../../lib/examinerData';
+import { ALL_LANGUAGES, type ExamSection, type ExamSettings, type Question } from '../../types/examiner';
 import type { LanguageKey } from '../../types/exam';
 import { btnGhost, btnPrimary, btnSmall, card, input, label } from '../../components/ui/styles';
 import { cn } from '../../lib/utils';
@@ -54,7 +54,7 @@ export function ExamEditor() {
       if (examId) {
         const snap = await getDoc(doc(db, 'exams', examId));
         if (!snap.exists()) throw new Error('Exam not found');
-        const e = { id: snap.id, ...(snap.data() as Omit<Exam, 'id'>) } as Exam;
+        const e = normalizeExam(snap.id, snap.data() as Record<string, unknown>);
         setTitle(e.title);
         setDescription(e.description);
         setInstructions(e.instructions);

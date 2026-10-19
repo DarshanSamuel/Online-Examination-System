@@ -13,9 +13,54 @@ import {
 import { db } from './firebase';
 import type { Assignment, AnswerKey, Exam, Question, QuestionInput, Submission } from '../types/examiner';
 
-/** Firestore rejects `undefined`; strip it recursively. */
+/** Firestore rejects `undefined`; strip it recursively while preserving Firestore Timestamps. */
 export function clean<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
+  if (value === null || typeof value !== 'object') return value;
+  if (
+    value instanceof Timestamp ||
+    value instanceof Date ||
+    typeof (value as { toDate?: unknown }).toDate === 'function'
+  ) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => clean(item)) as unknown as T;
+  }
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (v !== undefined) {
+      out[k] = clean(v);
+    }
+  }
+  return out as T;
+}
+
+/** Safely coerce a Firestore Timestamp or plain { seconds, nanoseconds } map back to a Timestamp. */
+export function asTimestamp(v: unknown): Timestamp {
+  if (v instanceof Timestamp) return v;
+  if (v && typeof v === 'object') {
+    if (typeof (v as { toDate?: unknown }).toDate === 'function') return v as Timestamp;
+    const sec = (v as { seconds?: number; _seconds?: number }).seconds ?? (v as { _seconds?: number })._seconds;
+    const nano = (v as { nanoseconds?: number; _nanoseconds?: number }).nanoseconds ?? (v as { _nanoseconds?: number })._nanoseconds ?? 0;
+    if (typeof sec === 'number') return new Timestamp(sec, nano);
+  }
+  if (typeof v === 'string' || typeof v === 'number') {
+    const d = new Date(v);
+    if (!Number.isNaN(d.getTime())) return Timestamp.fromDate(d);
+  }
+  return Timestamp.now();
+}
+
+export function normalizeExam(id: string, raw: Record<string, unknown>): Exam {
+  const e = { id, ...(raw as Omit<Exam, 'id'>) } as Exam;
+  const win = (raw.window ?? {}) as { opensAt?: unknown; closesAt?: unknown };
+  return {
+    ...e,
+    window: {
+      opensAt: asTimestamp(win.opensAt),
+      closesAt: asTimestamp(win.closesAt),
+    },
+  };
 }
 
 /* ───────────────────────────── questions ───────────────────────────── */
@@ -70,7 +115,7 @@ export async function deleteQuestion(id: string) {
 export async function listExams(uid: string): Promise<Exam[]> {
   const snap = await getDocs(query(collection(db, 'exams'), where('createdBy', '==', uid)));
   return snap.docs
-    .map((d) => ({ id: d.id, ...(d.data() as Omit<Exam, 'id'>) }) as Exam)
+    .map((d) => normalizeExam(d.id, d.data() as Record<string, unknown>))
     .sort((a, b) => b.window.opensAt.toMillis() - a.window.opensAt.toMillis());
 }
 

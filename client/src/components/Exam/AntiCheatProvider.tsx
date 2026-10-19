@@ -2,6 +2,8 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { AlertTriangle, Maximize } from 'lucide-react';
 import { useExamStore } from '../../store/examStore';
 import { reportProctorEvent } from '../../lib/proctorQueue';
+import { btnPrimary } from '../ui/styles';
+import { cn } from '../../lib/utils';
 
 /** Keys that open devtools / view-source / save / print, or leave the page. */
 function isBlockedShortcut(e: KeyboardEvent): string | null {
@@ -113,24 +115,21 @@ export function AntiCheatProvider({ children }: { children: ReactNode }) {
   const enterFullscreen = () => void document.documentElement.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
 
   return (
-    <div className="relative min-h-screen bg-slate-50 select-none">
+    <div className="relative min-h-screen bg-transparent select-none">
       {children}
 
       {active && requireFullscreen && !isFullscreen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-6">
-          <div className="max-w-md w-full rounded-2xl bg-white p-8 text-center shadow-2xl">
+        <div className="animate-modal-backdrop fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 p-6 backdrop-blur-sm">
+          <div className="animate-modal-pop w-full max-w-md rounded-2xl bg-white p-8 text-center shadow-2xl">
             <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-amber-100">
               <AlertTriangle className="h-7 w-7 text-amber-600" />
             </div>
-            <h2 className="text-xl font-semibold text-slate-900">Fullscreen required</h2>
+            <h2 className="text-xl font-bold text-slate-900">Fullscreen required</h2>
             <p className="mt-2 text-sm text-slate-600">
               The exam is paused on screen but your timer keeps running. Leaving fullscreen counts as a warning
               ({warningCount}/{maxWarnings}).
             </p>
-            <button
-              onClick={enterFullscreen}
-              className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-3 font-medium text-white hover:bg-primary-700"
-            >
+            <button onClick={enterFullscreen} className={cn(btnPrimary, 'mt-6 w-full py-3')}>
               <Maximize className="h-4 w-4" /> Return to fullscreen
             </button>
           </div>
@@ -138,7 +137,7 @@ export function AntiCheatProvider({ children }: { children: ReactNode }) {
       )}
 
       {toast && active && (
-        <div className="fixed top-4 left-1/2 z-[110] -translate-x-1/2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white shadow-lg">
+        <div className="animate-modal-pop fixed top-4 left-1/2 z-[110] -translate-x-1/2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-red-600/30">
           {toast}
         </div>
       )}

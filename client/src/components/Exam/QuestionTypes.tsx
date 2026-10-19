@@ -1,15 +1,16 @@
 import { useExamStore } from '../../store/examStore';
 import type { McqQuestion, NumericalQuestion } from '../../types/exam';
+import { card } from '../ui/styles';
 import { cn } from '../../lib/utils';
 
 export function QuestionHeader({ title, points, index }: { title: string; points: number; index: number }) {
   return (
     <div className="mb-4 flex items-start justify-between gap-4">
-      <h2 className="text-lg font-semibold text-slate-900">
-        <span className="mr-2 text-slate-400">Q{index + 1}.</span>
+      <h2 className="text-lg font-bold tracking-tight text-slate-900">
+        <span className="mr-2 text-primary-500">Q{index + 1}.</span>
         {title}
       </h2>
-      <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+      <span className="shrink-0 rounded-full bg-slate-100 px-3 py-0.5 text-xs font-semibold text-slate-600 ring-1 ring-inset ring-slate-200/80">
         {points} {points === 1 ? 'pt' : 'pts'}
       </span>
     </div>
@@ -28,7 +29,7 @@ export function MCQQuestion({ question, index }: { question: McqQuestion; index:
   const selected = saved?.type === 'mcq' ? saved.selectedOptionId : null;
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    <div className={cn(card, 'p-6')}>
       <QuestionHeader title={question.title} points={question.points} index={index} />
       <Prompt text={question.prompt} />
 
@@ -41,8 +42,10 @@ export function MCQQuestion({ question, index }: { question: McqQuestion; index:
             <label
               key={opt.id}
               className={cn(
-                'flex cursor-pointer items-center gap-3 rounded-lg border p-4 transition-colors',
-                checked ? 'border-primary-500 bg-primary-50 ring-1 ring-primary-500' : 'border-slate-200 hover:bg-slate-50',
+                'flex cursor-pointer items-center gap-3.5 rounded-xl border p-4 transition-all duration-200 ease-out active:scale-[0.99]',
+                checked
+                  ? 'border-primary-500 bg-primary-50/70 shadow-xs ring-2 ring-primary-500/20'
+                  : 'border-slate-200/90 hover:border-slate-300 hover:bg-slate-50/80',
               )}
             >
               <input
@@ -52,10 +55,15 @@ export function MCQQuestion({ question, index }: { question: McqQuestion; index:
                 onChange={() => saveAnswer(question.questionId, { type: 'mcq', selectedOptionId: opt.id })}
                 className="h-4 w-4 accent-primary-600"
               />
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-500">
+              <span
+                className={cn(
+                  'flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold transition-colors',
+                  checked ? 'bg-primary-600 text-white' : 'bg-slate-100 text-slate-500',
+                )}
+              >
                 {String.fromCharCode(65 + i)}
               </span>
-              <span className="text-slate-800">{opt.text}</span>
+              <span className="font-medium text-slate-800">{opt.text}</span>
             </label>
           );
         })}
@@ -64,7 +72,7 @@ export function MCQQuestion({ question, index }: { question: McqQuestion; index:
       {selected && (
         <button
           onClick={() => saveAnswer(question.questionId, { type: 'mcq', selectedOptionId: null })}
-          className="mt-4 text-sm text-slate-500 underline-offset-2 hover:underline"
+          className="animate-tab-enter mt-4 cursor-pointer text-sm font-medium text-slate-500 underline-offset-2 transition-colors hover:text-slate-800 hover:underline"
         >
           Clear selection
         </button>
@@ -82,12 +90,12 @@ export function NumericalQuestion({ question, index }: { question: NumericalQues
   const value = saved?.type === 'numerical' ? saved.value : '';
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    <div className={cn(card, 'p-6')}>
       <QuestionHeader title={question.title} points={question.points} index={index} />
       <Prompt text={question.prompt} />
 
-      <label className="mt-6 block text-sm font-medium text-slate-700">Your answer</label>
-      <div className="mt-2 flex max-w-sm items-center rounded-lg border border-slate-300 bg-white focus-within:border-primary-500 focus-within:ring-1 focus-within:ring-primary-500">
+      <label className="mt-6 block text-xs font-semibold uppercase tracking-wide text-slate-600">Your answer</label>
+      <div className="mt-2 flex max-w-sm items-center rounded-xl border border-slate-200/90 bg-white shadow-2xs transition-all duration-200 focus-within:border-primary-500 focus-within:ring-3 focus-within:ring-primary-500/15">
         <input
           inputMode="decimal"
           autoComplete="off"
@@ -98,9 +106,9 @@ export function NumericalQuestion({ question, index }: { question: NumericalQues
             if (NUMERIC_DRAFT.test(v)) saveAnswer(question.questionId, { type: 'numerical', value: v });
           }}
           placeholder="e.g. 12.57"
-          className="w-full rounded-lg bg-transparent px-4 py-2.5 font-mono outline-none"
+          className="w-full rounded-xl bg-transparent px-4 py-2.5 font-mono outline-none"
         />
-        {question.unit && <span className="pr-4 text-sm text-slate-500">{question.unit}</span>}
+        {question.unit && <span className="pr-4 text-sm font-medium text-slate-500">{question.unit}</span>}
       </div>
       <p className="mt-2 text-xs text-slate-500">Numbers only. Scientific notation like 1.2e-3 is accepted.</p>
     </div>

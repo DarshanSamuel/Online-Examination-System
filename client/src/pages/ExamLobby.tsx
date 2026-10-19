@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { doc, getDoc } from 'firebase/firestore';
 import { ArrowLeft, Clock, Loader2, ShieldCheck } from 'lucide-react';
-import { Link } from 'react-router-dom';
 import { db } from '../lib/firebase';
 import { api, apiErrorMessage } from '../lib/api';
 import { SystemCheck } from '../components/Lobby/SystemCheck';
 import { FullPageSpinner } from '../components/ui/FullPageSpinner';
+import { ThemeToggle } from '../components/ui/ThemeToggle';
+import { btnPrimary, card } from '../components/ui/styles';
+import { cn } from '../lib/utils';
 import type { StartResult } from '../types/exam';
 
 interface ExamInfo {
@@ -69,25 +71,28 @@ export function ExamLobby() {
   if (!exam) return <FullPageSpinner label="Loading exam…" />;
 
   return (
-    <div className="min-h-screen bg-slate-50 px-6 py-10">
-      <div className="mx-auto max-w-4xl">
-        <Link to="/" className="mb-6 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800">
-          <ArrowLeft className="h-4 w-4" /> My exams
-        </Link>
+    <div className="min-h-screen bg-transparent px-6 py-10">
+      <div className="animate-page-enter mx-auto max-w-4xl">
+        <div className="mb-6 flex items-center justify-between">
+          <Link to="/" className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-slate-900">
+            <ArrowLeft className="h-4 w-4" /> My exams
+          </Link>
+          <ThemeToggle />
+        </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+        <div className={cn(card, 'p-8')}>
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-semibold text-slate-900">{exam.title}</h1>
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900">{exam.title}</h1>
               <p className="mt-1 text-slate-600">{exam.description}</p>
             </div>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-700">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-primary-50 px-3.5 py-1 text-sm font-medium text-primary-700 ring-1 ring-inset ring-primary-200">
               <Clock className="h-4 w-4" /> {exam.durationMinutes} min
             </span>
           </div>
 
           {exam.instructions && (
-            <div className="mt-6 rounded-xl bg-slate-50 p-4 text-sm leading-relaxed text-slate-700 whitespace-pre-wrap">{exam.instructions}</div>
+            <div className="mt-6 rounded-xl border border-slate-200/70 bg-slate-50/80 p-4 text-sm leading-relaxed text-slate-700 whitespace-pre-wrap">{exam.instructions}</div>
           )}
 
           <h2 className="mb-4 mt-8 flex items-center gap-2 text-lg font-semibold text-slate-900">
@@ -100,7 +105,7 @@ export function ExamLobby() {
             onReadyChange={onReadyChange}
           />
 
-          <label className="mt-8 flex items-start gap-3 text-sm text-slate-700">
+          <label className="mt-8 flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200/80 bg-slate-50/60 p-4 text-sm text-slate-700 transition-colors hover:bg-slate-50">
             <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="mt-0.5 h-4 w-4 accent-primary-600" />
             <span>
               I understand that this exam is proctored: tab switches, leaving fullscreen, clipboard use and background audio are logged,
@@ -109,12 +114,12 @@ export function ExamLobby() {
             </span>
           </label>
 
-          {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
+          {error && <p className="animate-tab-enter mt-4 text-sm text-red-600">{error}</p>}
 
           <button
             onClick={start}
             disabled={!ready || !agreed || starting}
-            className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 py-3 font-semibold text-white shadow-sm transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+            className={cn(btnPrimary, 'mt-6 w-full py-3.5 text-base font-semibold')}
           >
             {starting && <Loader2 className="h-4 w-4 animate-spin" />}
             {ready ? (agreed ? 'Start exam' : 'Accept the terms to continue') : 'Complete the system check to continue'}

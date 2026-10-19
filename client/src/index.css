@@ -1,15 +1,259 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
-  --color-primary-50: #eff6ff;
-  --color-primary-100: #dbeafe;
-  --color-primary-500: #3b82f6;
-  --color-primary-600: #2563eb;
-  --color-primary-700: #1d4ed8;
+  --color-primary-50: #eef2ff;
+  --color-primary-100: #e0e7ff;
+  --color-primary-200: #c7d2fe;
+  --color-primary-300: #a5b4fc;
+  --color-primary-400: #818cf8;
+  --color-primary-500: #6366f1;
+  --color-primary-600: #4f46e5;
+  --color-primary-700: #4338ca;
+  --color-primary-800: #3730a3;
+  --color-primary-900: #312e81;
 }
 
-body {
-  @apply bg-gray-50 text-gray-900;
-  margin: 0;
-  font-family: system-ui, -apple-system, sans-serif;
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-900 antialiased transition-colors duration-300 selection:bg-primary-100 selection:text-primary-900;
+    margin: 0;
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  html.dark body {
+    background-color: #070b14;
+    color: #f1f5f9;
+    color-scheme: dark;
+  }
+
+  button,
+  select,
+  a {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* ── Dynamic Architectural Grid & Floating Orbs ─────────────── */
+.bg-dynamic-grid {
+  background-image:
+    linear-gradient(to right, rgba(99, 102, 241, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(99, 102, 241, 0.06) 1px, transparent 1px);
+  background-size: 40px 40px;
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 25%, #000 50%, transparent 100%);
+}
+
+html.dark .bg-dynamic-grid {
+  background-image:
+    linear-gradient(to right, rgba(129, 140, 248, 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(129, 140, 248, 0.08) 1px, transparent 1px);
+}
+
+@keyframes orbFloat1 {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(60px, 40px) scale(1.08);
+  }
+  66% {
+    transform: translate(-30px, 70px) scale(0.95);
+  }
+}
+
+@keyframes orbFloat2 {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(-70px, -40px) scale(1.06);
+  }
+  66% {
+    transform: translate(40px, -60px) scale(0.94);
+  }
+}
+
+@keyframes orbFloat3 {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(50px, -50px) scale(1.1);
+  }
+}
+
+.animate-orb-1 {
+  animation: orbFloat1 18s ease-in-out infinite;
+}
+
+.animate-orb-2 {
+  animation: orbFloat2 22s ease-in-out infinite;
+}
+
+.animate-orb-3 {
+  animation: orbFloat3 20s ease-in-out infinite;
+}
+
+/* ── Global Dark Mode Surface & Typography Remapping ────────── */
+html.dark {
+  & .bg-white,
+  & .bg-white\/95,
+  & .bg-white\/90,
+  & .bg-white\/85,
+  & .bg-white\/75,
+  & .bg-white\/60 {
+    background-color: rgba(15, 23, 42, 0.82) !important;
+  }
+
+  & .bg-slate-50,
+  & .bg-slate-50\/80,
+  & .bg-slate-50\/70,
+  & .bg-slate-50\/60,
+  & .bg-slate-50\/40 {
+    background-color: rgba(30, 41, 59, 0.55) !important;
+  }
+
+  & .bg-slate-100,
+  & .bg-slate-100\/80 {
+    background-color: rgba(30, 41, 59, 0.85) !important;
+  }
+
+  & .hover\:bg-slate-50:hover,
+  & .hover\:bg-slate-50\/80:hover,
+  & .hover\:bg-slate-50\/90:hover,
+  & .hover\:bg-slate-100:hover,
+  & .hover\:bg-slate-100\/70:hover,
+  & .hover\:bg-slate-200:hover {
+    background-color: rgba(51, 65, 85, 0.55) !important;
+  }
+
+  & .text-slate-900 {
+    color: #f8fafc !important;
+  }
+
+  & .text-slate-800,
+  & .hover\:text-slate-800:hover,
+  & .hover\:text-slate-900:hover {
+    color: #e2e8f0 !important;
+  }
+
+  & .text-slate-700 {
+    color: #cbd5e1 !important;
+  }
+
+  & .text-slate-600 {
+    color: #94a3b8 !important;
+  }
+
+  & .text-slate-500 {
+    color: #94a3b8 !important;
+  }
+
+  & .border-slate-200,
+  & .border-slate-200\/90,
+  & .border-slate-200\/80,
+  & .border-slate-200\/70,
+  & .border-slate-300,
+  & .border-slate-100 {
+    border-color: rgba(51, 65, 85, 0.75) !important;
+  }
+
+  & .divide-slate-100 > :not(:last-child) {
+    border-color: rgba(51, 65, 85, 0.55) !important;
+  }
+
+  & .bg-primary-50,
+  & .bg-primary-50\/90,
+  & .bg-primary-50\/70,
+  & .bg-primary-50\/40 {
+    background-color: rgba(99, 102, 241, 0.16) !important;
+  }
+
+  & .text-primary-700,
+  & .text-primary-600 {
+    color: #a5b4fc !important;
+  }
+
+  & select,
+  & input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  & textarea {
+    background-color: rgba(15, 23, 42, 0.9) !important;
+    color: #f8fafc !important;
+    border-color: rgba(71, 85, 105, 0.75) !important;
+  }
+}
+
+/* ── Page, Tab, Panel & Modal Transitions ───────────────────── */
+@keyframes pageEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes tabEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.995);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes panelExpand {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.985);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes modalBackdrop {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes modalPop {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-page-enter {
+  animation: pageEnter 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-tab-enter {
+  animation: tabEnter 0.26s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-panel-open {
+  animation: panelExpand 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-modal-backdrop {
+  animation: modalBackdrop 0.2s ease-out both;
+}
+
+.animate-modal-pop {
+  animation: modalPop 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
 }

@@ -2,6 +2,7 @@ import { lazy, Suspense, type ReactElement } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from './auth/AuthProvider';
 import { RequireAuth } from './auth/RequireAuth';
+import { DynamicBackground } from './components/ui/DynamicBackground';
 import { FullPageSpinner } from './components/ui/FullPageSpinner';
 import { Login } from './pages/Login';
 import { CandidateHome } from './pages/CandidateHome';
@@ -23,6 +24,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <DynamicBackground />
         <Suspense fallback={<FullPageSpinner />}>
           <Routes>
             <Route path="/login" element={<Login />} />

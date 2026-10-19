@@ -29,7 +29,7 @@ const EnvSchema = z.object({
   ENABLE_SWEEPER: bool,
   SWEEPER_INTERVAL_SEC: z.coerce.number().int().positive().default(30),
   /** Vercel Cron sends `Authorization: Bearer $CRON_SECRET` to /api/internal/sweep. */
-  CRON_SECRET: z.string().min(16).optional(),
+  CRON_SECRET: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(16).optional()),
 });
 
 const parsed = EnvSchema.safeParse(process.env);

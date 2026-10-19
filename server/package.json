@@ -13,7 +13,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test test/grading.test.ts test/plagiarism.test.ts",
     "set-role": "tsx src/scripts/setRole.ts",
-    "seed:demo": "tsx src/scripts/seedDemo.ts"
+    "seed:demo": "tsx src/scripts/seedDemo.ts",
+    "seed:dsa": "tsx src/scripts/seedDsaBank.ts"
   },
   "dependencies": {
     "@vercel/functions": "^3.10.1",

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { collection, doc, getDocs, onSnapshot } from 'firebase/firestore';
 import { getDownloadURL, ref as storageRef } from 'firebase/storage';
-import { AlertTriangle, ArrowLeft, CheckCircle2, Loader2, RefreshCw, ShieldAlert, XCircle } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Camera, CheckCircle2, FileCheck2, Loader2, PlaySquare, RefreshCw, ShieldAlert, XCircle } from 'lucide-react';
 import { ExaminerLayout } from '../../components/examiner/ExaminerLayout';
 import { KeystrokeReplay } from '../../components/examiner/KeystrokeReplay';
 import { api, apiErrorMessage } from '../../lib/api';
@@ -15,12 +15,19 @@ import { cn } from '../../lib/utils';
 type Tab = 'answers' | 'proctoring' | 'snapshots' | 'replay';
 type Loaded = Record<string, { question: Question; key: AnswerKey }>;
 
+const TAB_ITEMS: { key: Tab; label: string; icon: typeof FileCheck2 }[] = [
+  { key: 'answers', label: 'Answers', icon: FileCheck2 },
+  { key: 'proctoring', label: 'Proctoring', icon: ShieldAlert },
+  { key: 'snapshots', label: 'Snapshots', icon: Camera },
+  { key: 'replay', label: 'Code replay', icon: PlaySquare },
+];
+
 const GRADE_TONE: Record<string, string> = {
-  correct: 'bg-emerald-100 text-emerald-800',
-  partial: 'bg-amber-100 text-amber-800',
-  incorrect: 'bg-red-100 text-red-800',
-  unanswered: 'bg-slate-100 text-slate-600',
-  error: 'bg-red-100 text-red-800',
+  correct: 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200',
+  partial: 'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200',
+  incorrect: 'bg-red-50 text-red-700 ring-1 ring-inset ring-red-200',
+  unanswered: 'bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-200',
+  error: 'bg-red-50 text-red-700 ring-1 ring-inset ring-red-200',
 };
 
 export function SubmissionReview() {
@@ -72,20 +79,20 @@ export function SubmissionReview() {
   const codingIds = useMemo(() => (sub?.questionMap ?? []).filter((m) => m.type === 'coding').map((m) => m.questionId), [sub]);
 
   if (missing) return <ExaminerLayout><p className="text-red-600">Submission not found or you don't have access.</p></ExaminerLayout>;
-  if (!sub) return <ExaminerLayout><p className="text-slate-400">Loading…</p></ExaminerLayout>;
+  if (!sub) return <ExaminerLayout><p className="animate-pulse text-slate-400">Loading…</p></ExaminerLayout>;
 
   const g = sub.grading;
   const p = sub.proctoring;
 
   return (
     <ExaminerLayout wide>
-      <Link to={`/examiner/exams/${sub.examId}`} className="mb-4 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800">
+      <Link to={`/examiner/exams/${sub.examId}`} className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-slate-900">
         <ArrowLeft className="h-4 w-4" /> Back to exam
       </Link>
 
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">{sub.candidateName}</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">{sub.candidateName}</h1>
           <p className="text-sm text-slate-500">{sub.candidateEmail}</p>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
             <span className={cn('rounded-full px-2.5 py-0.5 font-medium', statusTone[sub.status])}>{sub.status.replace('_', ' ')}</span>
@@ -94,9 +101,9 @@ export function SubmissionReview() {
           </div>
         </div>
         <div className="flex flex-col items-end gap-2">
-          <p className="text-3xl font-semibold text-slate-900">
+          <p className="text-3xl font-bold tracking-tight text-slate-900">
             {g.totalScore != null ? `${g.totalScore}` : '—'}
-            <span className="text-lg text-slate-400"> / {g.maxScore ?? '—'}</span>
+            <span className="text-lg font-normal text-slate-400"> / {g.maxScore ?? '—'}</span>
           </p>
           <div className="flex gap-2">
             {sub.status === 'in_progress' && (
@@ -112,8 +119,8 @@ export function SubmissionReview() {
           </div>
         </div>
       </div>
-      {notice && <p className="mt-4 rounded-lg bg-blue-50 p-3 text-sm text-blue-800">{notice}</p>}
-      {g.lastError && sub.status === 'grading_failed' && <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">Grading failed: {g.lastError}</p>}
+      {notice && <p className="animate-tab-enter mt-4 rounded-xl bg-blue-50 p-3.5 text-sm text-blue-800 ring-1 ring-inset ring-blue-200">{notice}</p>}
+      {g.lastError && sub.status === 'grading_failed' && <p className="animate-tab-enter mt-4 rounded-xl bg-red-50 p-3.5 text-sm text-red-700 ring-1 ring-inset ring-red-200">Grading failed: {g.lastError}</p>}
 
       <div className="mt-5 grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {[
@@ -124,22 +131,33 @@ export function SubmissionReview() {
           ['Blocked shortcuts', p.blockedShortcuts, p.blockedShortcuts > 0],
           ['Audio flags', p.audioFlags, p.audioFlags > 0],
         ].map(([k, v, bad]) => (
-          <div key={k as string} className={cn(card, 'p-3')}>
-            <p className="text-[11px] uppercase tracking-wide text-slate-500">{k}</p>
-            <p className={cn('text-xl font-semibold', bad ? 'text-red-600' : 'text-slate-900')}>{v}</p>
+          <div key={k as string} className={cn(card, 'p-3.5 transition-transform duration-200 hover:-translate-y-0.5')}>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{k}</p>
+            <p className={cn('mt-1 text-xl font-bold', bad ? 'text-red-600' : 'text-slate-900')}>{v}</p>
           </div>
         ))}
       </div>
 
-      <div className="mt-6 flex gap-1 border-b border-slate-200">
-        {(['answers', 'proctoring', 'snapshots', 'replay'] as Tab[]).map((t) => (
-          <button key={t} onClick={() => setTab(t)} className={cn('border-b-2 px-4 pb-2.5 text-sm font-medium capitalize', tab === t ? 'border-primary-600 text-primary-700' : 'border-transparent text-slate-500 hover:text-slate-800')}>
-            {t === 'replay' ? 'Code replay' : t}
+      {/* Smooth Segmented Pill Tabs */}
+      <div className="mt-6 inline-flex flex-wrap rounded-2xl border border-slate-200/90 bg-slate-100/80 p-1.5">
+        {TAB_ITEMS.map(({ key, label, icon: Icon }) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={cn(
+              'inline-flex cursor-pointer items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all duration-200 ease-out active:scale-[0.97]',
+              tab === key
+                ? 'bg-white text-primary-700 shadow-xs ring-1 ring-slate-200/60'
+                : 'text-slate-600 hover:text-slate-900',
+            )}
+          >
+            <Icon className="h-4 w-4" />
+            {label}
           </button>
         ))}
       </div>
 
-      <div className="mt-6">
+      <div key={tab} className="animate-tab-enter mt-6">
         {tab === 'answers' && <AnswersTab sub={sub} loaded={loaded} />}
         {tab === 'proctoring' && <EventsTab submissionId={sub.id} />}
         {tab === 'snapshots' && <SnapshotsTab submissionId={sub.id} />}
@@ -162,32 +180,32 @@ function AnswersTab({ sub, loaded }: { sub: Submission; loaded: Loaded }) {
         const ks = sub.keystrokeStats?.[m.questionId];
         const q = l?.question;
         return (
-          <div key={m.questionId} className={cn(card, 'p-5')}>
+          <div key={m.questionId} className={cn(card, 'p-6')}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p className="text-xs uppercase tracking-wide text-slate-400">Q{i + 1} · {m.type}</p>
-                <h3 className="font-semibold text-slate-900">{q?.title ?? m.questionId}</h3>
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Q{i + 1} · {m.type}</p>
+                <h3 className="mt-0.5 font-semibold text-slate-900">{q?.title ?? m.questionId}</h3>
               </div>
               <div className="flex items-center gap-2">
-                {grade && <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-medium', GRADE_TONE[grade.status])}>{grade.status}</span>}
-                <span className="font-mono text-sm">{grade ? `${grade.score}/${grade.maxScore}` : `—/${m.points}`}</span>
+                {grade && <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-medium capitalize', GRADE_TONE[grade.status])}>{grade.status}</span>}
+                <span className="font-mono text-sm font-medium">{grade ? `${grade.score}/${grade.maxScore}` : `—/${m.points}`}</span>
               </div>
             </div>
             {q && <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-sm text-slate-600">{q.prompt}</p>}
-            {grade?.note && <p className="mt-2 text-xs text-amber-700">{grade.note}</p>}
+            {grade?.note && <p className="mt-2 text-xs font-medium text-amber-700">{grade.note}</p>}
 
             <div className="mt-4">
               {!ans && <p className="text-sm italic text-slate-400">No answer submitted.</p>}
 
               {ans && m.type === 'mcq' && q?.type === 'mcq' && l.key.type === 'mcq' && (
-                <ul className="space-y-1.5">
+                <ul className="space-y-2">
                   {(m.optionOrder ?? q.options.map((o) => o.id)).map((oid) => {
                     const opt = q.options.find((o) => o.id === oid);
                     if (!opt) return null;
                     const picked = ans.selectedOptionId === oid;
                     const correct = (l.key as { correctOptionId: string }).correctOptionId === oid;
                     return (
-                      <li key={oid} className={cn('flex items-center gap-2 rounded-lg border px-3 py-2 text-sm', correct ? 'border-emerald-300 bg-emerald-50' : picked ? 'border-red-300 bg-red-50' : 'border-slate-200')}>
+                      <li key={oid} className={cn('flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-sm', correct ? 'border-emerald-300 bg-emerald-50/70' : picked ? 'border-red-300 bg-red-50/70' : 'border-slate-200/80')}>
                         {correct ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : picked ? <XCircle className="h-4 w-4 text-red-600" /> : <span className="h-4 w-4" />}
                         <span className="flex-1">{opt.text}</span>
                         {picked && <span className="text-xs font-medium text-slate-500">candidate's choice</span>}
@@ -199,8 +217,8 @@ function AnswersTab({ sub, loaded }: { sub: Submission; loaded: Loaded }) {
 
               {ans && m.type === 'numerical' && l?.key.type === 'numerical' && (
                 <p className="text-sm">
-                  Candidate answered <code className="rounded bg-slate-100 px-1.5 py-0.5">{ans.value || '(blank)'}</code>; expected{' '}
-                  <code className="rounded bg-slate-100 px-1.5 py-0.5">{l.key.value}</code> (± {l.key.tolerance.amount}
+                  Candidate answered <code className="rounded-md bg-slate-100 px-2 py-0.5 font-mono">{ans.value || '(blank)'}</code>; expected{' '}
+                  <code className="rounded-md bg-slate-100 px-2 py-0.5 font-mono">{l.key.value}</code> (± {l.key.tolerance.amount}
                   {l.key.tolerance.mode === 'relative' ? ' relative' : ''}).
                 </p>
               )}
@@ -220,12 +238,12 @@ function AnswersTab({ sub, loaded }: { sub: Submission; loaded: Loaded }) {
                       </>
                     )}
                   </div>
-                  <pre className="max-h-80 overflow-auto rounded-lg bg-slate-950 p-4 text-xs text-slate-100">{ans.code || '(empty)'}</pre>
+                  <pre className="max-h-80 overflow-auto rounded-xl bg-slate-950 p-4 text-xs text-slate-100">{ans.code || '(empty)'}</pre>
                   {grade?.tests && (
                     <div className="flex flex-wrap gap-2">
                       {grade.tests.map((t) => (
-                        <span key={t.testCaseId} title={`${t.visibility} · ${t.status}`} className={cn('inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium', t.passed ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800')}>
-                          {t.passed ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+                        <span key={t.testCaseId} title={`${t.visibility} · ${t.status}`} className={cn('inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium', t.passed ? 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200' : 'bg-red-50 text-red-700 ring-1 ring-inset ring-red-200')}>
+                          {t.passed ? <CheckCircle2 className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
                           {t.visibility === 'hidden' ? 'Hidden' : 'Public'} {t.testCaseId}
                           {!t.passed && ` (${t.status.replace(/_/g, ' ')})`}
                         </span>
@@ -263,30 +281,30 @@ function EventsTab({ submissionId }: { submissionId: string }) {
       .catch(() => setRows([]));
   }, [submissionId]);
 
-  if (!rows) return <p className="text-slate-400">Loading…</p>;
+  if (!rows) return <p className="animate-pulse text-slate-400">Loading…</p>;
   const shown = onlyViolations ? rows.filter((r) => r.countedAsViolation) : rows;
 
   return (
     <div className={cn(card, 'overflow-hidden')}>
-      <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
+      <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
         <p className="text-sm font-semibold text-slate-900">{shown.length} events</p>
-        <label className="flex items-center gap-2 text-xs text-slate-600">
+        <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-600">
           <input type="checkbox" className="accent-primary-600" checked={onlyViolations} onChange={(e) => setOnlyViolations(e.target.checked)} />
           Only warnings
         </label>
       </div>
       <ul className="divide-y divide-slate-100">
         {shown.map((r) => (
-          <li key={r.id} className="flex items-start gap-4 px-5 py-2.5 text-sm">
+          <li key={r.id} className="flex items-start gap-4 px-5 py-3 text-sm transition-colors hover:bg-slate-50/80">
             <span className="w-40 shrink-0 font-mono text-xs text-slate-400">{r.serverTs.toDate().toLocaleTimeString()}</span>
             <span className={cn('w-44 shrink-0 font-medium', r.countedAsViolation ? 'text-red-600' : 'text-slate-700')}>
               {r.type.replace(/_/g, ' ')}
-              {r.countedAsViolation && <span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-[10px] uppercase text-red-700">warning</span>}
+              {r.countedAsViolation && <span className="ml-2 rounded-md bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-red-700">warning</span>}
             </span>
             <span className="truncate text-xs text-slate-500">{Object.entries(r.meta ?? {}).map(([k, v]) => `${k}: ${v}`).join(' · ')}</span>
           </li>
         ))}
-        {shown.length === 0 && <p className="px-5 py-10 text-center text-slate-400">No events.</p>}
+        {shown.length === 0 && <p className="px-5 py-12 text-center text-slate-400">No events.</p>}
       </ul>
     </div>
   );
@@ -311,7 +329,7 @@ function SnapshotImg({ path }: { path: string }) {
   if (!url) return <div className="aspect-[4/3] animate-pulse bg-slate-100" />;
   return (
     <a href={url} target="_blank" rel="noreferrer">
-      <img src={url} alt="Proctoring snapshot" loading="lazy" className="aspect-[4/3] w-full -scale-x-100 object-cover" />
+      <img src={url} alt="Proctoring snapshot" loading="lazy" className="aspect-[4/3] w-full -scale-x-100 object-cover transition-transform duration-300 hover:scale-105" />
     </a>
   );
 }
@@ -324,15 +342,15 @@ function SnapshotsTab({ submissionId }: { submissionId: string }) {
       .catch(() => setRows([]));
   }, [submissionId]);
 
-  if (!rows) return <p className="text-slate-400">Loading…</p>;
-  if (!rows.length) return <p className="text-center text-slate-400">No snapshots captured.</p>;
+  if (!rows) return <p className="animate-pulse text-slate-400">Loading…</p>;
+  if (!rows.length) return <p className="py-10 text-center text-slate-400">No snapshots captured.</p>;
 
   return (
     <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-6">
       {rows.map((r) => (
-        <figure key={r.id} className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+        <figure key={r.id} className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-2xs transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
           <SnapshotImg path={r.storagePath} />
-          <figcaption className="flex items-center justify-between px-2 py-1.5 text-[11px] text-slate-500">
+          <figcaption className="flex items-center justify-between px-2.5 py-1.5 text-[11px] text-slate-500">
             <span>{new Date(r.clientTs).toLocaleTimeString()}</span>
             {r.audioLevelDb != null && <span className={r.audioLevelDb > -20 ? 'font-medium text-red-600' : ''}>{r.audioLevelDb} dB</span>}
           </figcaption>
@@ -350,11 +368,25 @@ function ReplayTab({ sub, loaded, codingIds }: { sub: Submission; loaded: Loaded
   return (
     <div className="space-y-4">
       {codingIds.length > 1 && (
-        <select className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" value={qid} onChange={(e) => setQid(e.target.value)}>
-          {codingIds.map((id) => <option key={id} value={id}>{loaded[id]?.question.title ?? id}</option>)}
-        </select>
+        <div className="inline-flex flex-wrap gap-1 rounded-xl border border-slate-200/80 bg-slate-100/80 p-1">
+          {codingIds.map((id) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setQid(id)}
+              className={cn(
+                'cursor-pointer rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200 active:scale-95',
+                qid === id ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900',
+              )}
+            >
+              {loaded[id]?.question.title ?? id}
+            </button>
+          ))}
+        </div>
       )}
-      <KeystrokeReplay key={qid} submissionId={sub.id} questionId={qid} submittedCode={sub.answers[qid]?.code} />
+      <div key={qid} className="animate-tab-enter">
+        <KeystrokeReplay submissionId={sub.id} questionId={qid} submittedCode={sub.answers[qid]?.code} />
+      </div>
     </div>
   );
 }

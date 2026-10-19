@@ -10,6 +10,8 @@ import { CodeEditor } from './CodeEditor';
 import { MCQQuestion, NumericalQuestion } from './QuestionTypes';
 import { ExamEnded } from './ExamEnded';
 import { FullPageSpinner } from '../ui/FullPageSpinner';
+import { ThemeToggle } from '../ui/ThemeToggle';
+import { btnGhost, btnPrimary } from '../ui/styles';
 import { cn } from '../../lib/utils';
 import { apiErrorMessage } from '../../lib/api';
 import type { LocalAnswer } from '../../types/exam';
@@ -33,7 +35,7 @@ const SYNC_LABEL: Record<SyncStatus, string> = {
 function SyncBadge({ status }: { status: SyncStatus }) {
   const Icon = status === 'offline' || status === 'error' ? CloudOff : status === 'syncing' ? Loader2 : Cloud;
   return (
-    <span className={cn('hidden items-center gap-1.5 text-xs sm:flex', status === 'offline' || status === 'error' ? 'text-amber-600' : 'text-slate-500')}>
+    <span className={cn('hidden items-center gap-1.5 text-xs font-medium transition-colors sm:flex', status === 'offline' || status === 'error' ? 'text-amber-600' : 'text-slate-500')}>
       <Icon className={cn('h-4 w-4', status === 'syncing' && 'animate-spin')} />
       {SYNC_LABEL[status]}
     </span>
@@ -56,7 +58,7 @@ export function ExamEnvironment({ submissionId }: { submissionId: string }) {
   if (loadError) {
     return (
       <div className="flex min-h-screen items-center justify-center p-6">
-        <div className="max-w-md rounded-xl border border-red-200 bg-white p-6 text-center">
+        <div className="animate-modal-pop max-w-md rounded-2xl border border-red-200 bg-white p-6 text-center shadow-lg">
           <p className="font-semibold text-red-700">Could not load the exam</p>
           <p className="mt-2 text-sm text-slate-600">{loadError}</p>
         </div>
@@ -80,52 +82,48 @@ export function ExamEnvironment({ submissionId }: { submissionId: string }) {
       <ProctoringEngine />
       <div className="flex h-screen flex-col">
         {/* Header */}
-        <header className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-200 bg-white px-5 py-3">
+        <header className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-200/80 bg-white/90 px-5 py-3 backdrop-blur-md">
           <div className="min-w-0">
-            <h1 className="truncate text-base font-semibold text-slate-900">{s.examTitle}</h1>
+            <h1 className="truncate text-base font-bold tracking-tight text-slate-900">{s.examTitle}</h1>
             <p className="text-xs text-slate-500">
               {answeredCount}/{s.questions.length} answered
             </p>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <SyncBadge status={s.syncStatus} />
             <span
               title="Warnings recorded by the server"
               className={cn(
-                'flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium',
-                s.warningCount ? 'bg-red-50 text-red-700' : 'bg-slate-100 text-slate-600',
+                'flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
+                s.warningCount ? 'bg-red-50 text-red-700 ring-1 ring-inset ring-red-200' : 'bg-slate-100 text-slate-600',
               )}
             >
               <ShieldAlert className="h-3.5 w-3.5" /> {s.warningCount}/{s.maxWarnings}
             </span>
             <Timer />
-            <button
-              onClick={() => setConfirming(true)}
-              disabled={s.phase === 'submitting'}
-              className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-60"
-            >
+            <ThemeToggle />
+            <button onClick={() => setConfirming(true)} disabled={s.phase === 'submitting'} className={btnPrimary}>
               {s.phase === 'submitting' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               {s.phase === 'submitting' ? 'Submitting…' : 'Submit'}
             </button>
           </div>
         </header>
 
-        {/* Question body */}
+        {/* Question body with smooth transition on question change */}
         <main className="min-h-0 flex-1 overflow-auto p-5">
-          <div className={cn('mx-auto h-full', q.type === 'coding' ? 'max-w-[1600px]' : 'max-w-3xl')}>
-            {q.type === 'mcq' && <MCQQuestion key={q.questionId} question={q} index={s.currentIndex} />}
-            {q.type === 'numerical' && <NumericalQuestion key={q.questionId} question={q} index={s.currentIndex} />}
-            {q.type === 'coding' && <CodeEditor key={q.questionId} question={q} index={s.currentIndex} />}
+          <div
+            key={q.questionId}
+            className={cn('animate-tab-enter mx-auto h-full', q.type === 'coding' ? 'max-w-[1600px]' : 'max-w-3xl')}
+          >
+            {q.type === 'mcq' && <MCQQuestion question={q} index={s.currentIndex} />}
+            {q.type === 'numerical' && <NumericalQuestion question={q} index={s.currentIndex} />}
+            {q.type === 'coding' && <CodeEditor question={q} index={s.currentIndex} />}
           </div>
         </main>
 
         {/* Navigator */}
-        <footer className="flex shrink-0 items-center justify-between gap-4 border-t border-slate-200 bg-white px-5 py-3">
-          <button
-            onClick={() => s.goTo(s.currentIndex - 1)}
-            disabled={s.currentIndex === 0}
-            className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-          >
+        <footer className="flex shrink-0 items-center justify-between gap-4 border-t border-slate-200/80 bg-white/90 px-5 py-3 backdrop-blur-md">
+          <button onClick={() => s.goTo(s.currentIndex - 1)} disabled={s.currentIndex === 0} className={btnGhost}>
             <ChevronLeft className="h-4 w-4" /> Previous
           </button>
           <nav className="flex flex-wrap justify-center gap-1.5">
@@ -135,11 +133,11 @@ export function ExamEnvironment({ submissionId }: { submissionId: string }) {
                 onClick={() => s.goTo(i)}
                 title={`${x.type.toUpperCase()} · ${x.points} pts`}
                 className={cn(
-                  'h-8 w-8 rounded-md text-sm font-medium transition-colors',
+                  'h-8.5 w-8.5 cursor-pointer rounded-xl text-sm font-semibold transition-all duration-200 ease-out active:scale-90',
                   i === s.currentIndex
-                    ? 'bg-primary-600 text-white'
+                    ? 'bg-primary-600 text-white shadow-sm shadow-primary-600/30 scale-105'
                     : isAnswered(s.answers[x.questionId])
-                      ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+                      ? 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200 hover:bg-emerald-100'
                       : 'bg-slate-100 text-slate-600 hover:bg-slate-200',
                 )}
               >
@@ -150,7 +148,7 @@ export function ExamEnvironment({ submissionId }: { submissionId: string }) {
           <button
             onClick={() => s.goTo(s.currentIndex + 1)}
             disabled={s.currentIndex === s.questions.length - 1}
-            className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-40"
+            className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:bg-slate-800 active:translate-y-0 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40 dark:bg-primary-600 dark:hover:bg-primary-500"
           >
             Next <ChevronRight className="h-4 w-4" />
           </button>
@@ -158,17 +156,17 @@ export function ExamEnvironment({ submissionId }: { submissionId: string }) {
       </div>
 
       {confirming && (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-900/60 p-6">
-          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
-            <h3 className="text-lg font-semibold text-slate-900">Submit exam?</h3>
+        <div className="animate-modal-backdrop fixed inset-0 z-[90] flex items-center justify-center bg-slate-900/60 p-6 backdrop-blur-xs">
+          <div className="animate-modal-pop w-full max-w-sm rounded-2xl border border-slate-200/80 bg-white p-6 shadow-2xl">
+            <h3 className="text-lg font-bold text-slate-900">Submit exam?</h3>
             <p className="mt-2 text-sm text-slate-600">
               You answered {answeredCount} of {s.questions.length} questions. You can't make changes after submitting.
             </p>
-            <div className="mt-6 flex justify-end gap-2">
-              <button onClick={() => setConfirming(false)} className="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
+            <div className="mt-6 flex justify-end gap-2.5">
+              <button onClick={() => setConfirming(false)} className={btnGhost}>
                 Keep working
               </button>
-              <button onClick={doSubmit} className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700">
+              <button onClick={doSubmit} className={btnPrimary}>
                 Submit now
               </button>
             </div>

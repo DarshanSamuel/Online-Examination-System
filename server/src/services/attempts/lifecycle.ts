@@ -4,7 +4,7 @@ import { HttpError, isHttpError } from '../../lib/errors.js';
 import { logger } from '../../lib/logger.js';
 import { sample, shuffle } from '../../lib/util.js';
 import type { AuthedUser } from '../../middleware/auth.js';
-import type { AssignmentDoc, ExamDoc, QuestionDoc, QuestionMapEntry, SubmissionDoc, SubmitReason } from '../../types/schema.js';
+import type { AssignmentDoc, AttemptHistoryEntry, ExamDoc, QuestionDoc, QuestionMapEntry, SubmissionDoc, SubmitReason } from '../../types/schema.js';
 import { queueGrading } from '../grading/gradeSubmission.js';
 
 /* ───────────────────────────── helpers ───────────────────────────── */
@@ -70,6 +70,7 @@ export async function startAttempt(user: AuthedUser, examId: string, client: { u
     const closesMs = toMillis(exam.window.closesAt);
 
     let attemptCount = 1;
+    let attemptHistory: AttemptHistoryEntry[] = [];
 
     if (subSnap.exists) {
       const sub = subSnap.data() as SubmissionDoc;
@@ -88,6 +89,21 @@ export async function startAttempt(user: AuthedUser, examId: string, client: { u
       if (maxAttempts > 0 && prevAttempts >= maxAttempts) {
         throw new HttpError(403, `No attempts remaining (${prevAttempts}/${maxAttempts} used)`, 'MAX_ATTEMPTS_REACHED');
       }
+
+      // Snapshot the completed previous attempt into attemptHistory before resetting for the new attempt.
+      const prevEntry: AttemptHistoryEntry = {
+        attemptNumber: prevAttempts,
+        status: sub.status === 'in_progress' ? 'submitted' : sub.status,
+        submitReason: sub.submitReason ?? 'timeout',
+        startedAt: sub.timing.startedAt,
+        submittedAt: sub.timing.submittedAt ?? Timestamp.fromMillis(nowMs),
+        totalScore: sub.grading.totalScore,
+        maxScore: sub.grading.maxScore ?? sub.questionMap.reduce((acc, q) => acc + q.points, 0),
+        warningCount: sub.proctoring.warningCount,
+        perQuestion: sub.grading.perQuestion,
+      };
+      const existingHistory = (sub.attemptHistory ?? []).filter((h) => h.attemptNumber !== prevAttempts);
+      attemptHistory = [...existingHistory, prevEntry].sort((a, b) => a.attemptNumber - b.attemptNumber);
       attemptCount = prevAttempts + 1;
     } else {
       if (nowMs < opensMs) throw new HttpError(403, 'Exam has not opened yet', 'EXAM_NOT_OPEN');
@@ -106,6 +122,7 @@ export async function startAttempt(user: AuthedUser, examId: string, client: { u
       status: 'in_progress',
       submitReason: null,
       attemptCount,
+      attemptHistory,
       examSnapshot: {
         title: exam.title,
         allowedLanguages: exam.settings.allowedLanguages,

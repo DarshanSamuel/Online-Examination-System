@@ -116,6 +116,18 @@ export interface QuestionGrade {
   note?: string;
 }
 
+export interface AttemptHistoryEntry {
+  attemptNumber: number;
+  status: 'in_progress' | 'submitted' | 'grading' | 'graded' | 'grading_failed';
+  submitReason: string | null;
+  startedAt: Timestamp;
+  submittedAt: Timestamp | null;
+  totalScore: number | null;
+  maxScore: number | null;
+  warningCount: number;
+  perQuestion?: Record<string, QuestionGrade>;
+}
+
 export interface Submission {
   id: string;
   examId: string;
@@ -125,6 +137,7 @@ export interface Submission {
   status: 'in_progress' | 'submitted' | 'grading' | 'graded' | 'grading_failed';
   submitReason: string | null;
   attemptCount?: number;
+  attemptHistory?: AttemptHistoryEntry[];
   timing: { startedAt: Timestamp; deadlineAt: Timestamp; submittedAt: Timestamp | null };
   questionMap: { questionId: string; sectionId: string; type: 'mcq' | 'numerical' | 'coding'; points: number; order: number; optionOrder: string[] | null }[];
   answers: Record<string, { type: string; selectedOptionId?: string | null; value?: string; language?: LanguageKey; code?: string }>;

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, CalendarClock, CheckCircle2, Hourglass, Lock, Repeat, RotateCcw, XCircle } from 'lucide-react';
 import { api, apiErrorMessage } from '../lib/api';
+import { AttemptTrendChart, type NormalizedAttempt } from '../components/examiner/AttemptTrendChart';
 import { AppHeader } from '../components/ui/AppHeader';
 import { FullPageSpinner } from '../components/ui/FullPageSpinner';
 import { btnGhost, btnPrimary, card } from '../components/ui/styles';
@@ -18,6 +19,16 @@ interface Result {
   canReattempt?: boolean;
   totalScore?: number;
   maxScore?: number;
+  attemptHistory?: {
+    attemptNumber: number;
+    status: string;
+    submitReason: string | null;
+    startedAt: number;
+    submittedAt: number | null;
+    totalScore: number | null;
+    maxScore: number | null;
+    warningCount: number;
+  }[];
   questions?: { questionId: string; type: string; score: number; maxScore: number; status: string }[];
 }
 
@@ -57,11 +68,21 @@ export function ResultPage() {
   const max = data.maxAttempts ?? 0;
   const left = max > 0 ? Math.max(0, max - used) : null;
 
+  const normalizedAttempts: NormalizedAttempt[] = (data.attemptHistory ?? []).map((h) => ({
+    attemptNumber: h.attemptNumber,
+    status: h.status,
+    totalScore: h.totalScore,
+    maxScore: h.maxScore,
+    pct: h.totalScore != null && h.maxScore ? (h.totalScore / h.maxScore) * 100 : null,
+    warningCount: h.warningCount,
+    submittedAtMs: h.submittedAt,
+  }));
+
   return (
     <div className="min-h-screen bg-transparent">
       <AppHeader />
-      <main className="animate-page-enter mx-auto max-w-2xl px-6 py-10">
-        <Link to="/" className="mb-6 inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-slate-900">
+      <main className="animate-page-enter mx-auto max-w-3xl space-y-6 px-6 py-10">
+        <Link to="/" className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-slate-900">
           <ArrowLeft className="h-4 w-4" /> My exams
         </Link>
         <div className={cn(card, 'p-8 text-center')}>
@@ -83,7 +104,7 @@ export function ResultPage() {
           {data.released && (
             <div className="animate-tab-enter">
               <p className="mt-4 text-5xl font-bold tracking-tight text-slate-900">{pct}%</p>
-              <p className="mt-1 text-slate-500">{data.totalScore} of {data.maxScore} points</p>
+              <p className="mt-1 text-slate-500">{data.totalScore} of {data.maxScore} points (Attempt #{used})</p>
               <ul className="mt-6 divide-y divide-slate-100 text-left text-sm">
                 {data.questions?.map((q, i) => (
                   <li key={q.questionId} className="flex items-center justify-between py-3">
@@ -131,6 +152,10 @@ export function ResultPage() {
             )}
           </div>
         </div>
+
+        {data.released && normalizedAttempts.length > 0 && (
+          <AttemptTrendChart attempts={normalizedAttempts} />
+        )}
       </main>
     </div>
   );

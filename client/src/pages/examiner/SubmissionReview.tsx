@@ -4,6 +4,7 @@ import { collection, doc, getDocs, onSnapshot } from 'firebase/firestore';
 import { getDownloadURL, ref as storageRef } from 'firebase/storage';
 import { AlertTriangle, ArrowLeft, Camera, CheckCircle2, FileCheck2, Loader2, PlaySquare, RefreshCw, ShieldAlert, XCircle } from 'lucide-react';
 import { ExaminerLayout } from '../../components/examiner/ExaminerLayout';
+import { AttemptTrendChart, getResolvedAttempts } from '../../components/examiner/AttemptTrendChart';
 import { KeystrokeReplay } from '../../components/examiner/KeystrokeReplay';
 import { api, apiErrorMessage } from '../../lib/api';
 import { db, storage } from '../../lib/firebase';
@@ -83,6 +84,7 @@ export function SubmissionReview() {
 
   const g = sub.grading;
   const p = sub.proctoring;
+  const attempts = getResolvedAttempts(sub);
 
   return (
     <ExaminerLayout wide>
@@ -96,6 +98,7 @@ export function SubmissionReview() {
           <p className="text-sm text-slate-500">{sub.candidateEmail}</p>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
             <span className={cn('rounded-full px-2.5 py-0.5 font-medium', statusTone[sub.status])}>{sub.status.replace('_', ' ')}</span>
+            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 font-semibold text-slate-700">Attempt #{sub.attemptCount ?? 1}</span>
             {sub.submitReason && <span className="text-slate-500">submitted: {sub.submitReason.replace('_', ' ')}</span>}
             <span className="text-slate-400">started {sub.timing.startedAt.toDate().toLocaleString()}</span>
           </div>
@@ -121,6 +124,9 @@ export function SubmissionReview() {
       </div>
       {notice && <p className="animate-tab-enter mt-4 rounded-xl bg-blue-50 p-3.5 text-sm text-blue-800 ring-1 ring-inset ring-blue-200">{notice}</p>}
       {g.lastError && sub.status === 'grading_failed' && <p className="animate-tab-enter mt-4 rounded-xl bg-red-50 p-3.5 text-sm text-red-700 ring-1 ring-inset ring-red-200">Grading failed: {g.lastError}</p>}
+
+      {/* All Attempts Marks & Improvement/Depreciation Graph */}
+      <AttemptTrendChart attempts={attempts} candidateName={sub.candidateName} className="mt-5" />
 
       <div className="mt-5 grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {[

@@ -179,24 +179,29 @@ export function csvEscape(v: unknown): string {
 }
 
 export function resultsToCsv(subs: Submission[]): string {
-  const header = ['Name', 'Email', 'Status', 'Score', 'Max', 'Percent', 'Warnings', 'Tab switches', 'Fullscreen exits', 'Clipboard attempts', 'Audio flags', 'Submit reason', 'Started', 'Submitted'];
+  const header = ['Name', 'Email', 'Status', 'Attempts Count', 'Latest Score', 'Max', 'Percent', 'All Attempts History', 'Warnings', 'Tab switches', 'Fullscreen exits', 'Clipboard attempts', 'Audio flags', 'Submit reason', 'Started', 'Submitted'];
   const rows = subs.map((s) => {
     const pct = s.grading.totalScore != null && s.grading.maxScore ? ((s.grading.totalScore / s.grading.maxScore) * 100).toFixed(1) : '';
+    const historyStr = (s.attemptHistory ?? [])
+      .map((h) => `#${h.attemptNumber}: ${h.totalScore ?? '-'}/${h.maxScore ?? '-'}`)
+      .join(' | ');
     return [
       s.candidateName,
       s.candidateEmail,
       s.status,
+      s.attemptCount ?? 1,
       s.grading.totalScore ?? '',
       s.grading.maxScore ?? '',
       pct,
+      historyStr || `#1: ${s.grading.totalScore ?? '-'}/${s.grading.maxScore ?? '-'}`,
       s.proctoring.warningCount,
       s.proctoring.tabSwitches,
       s.proctoring.fullscreenExits,
       s.proctoring.clipboardAttempts,
       s.proctoring.audioFlags,
       s.submitReason ?? '',
-      s.timing.startedAt.toDate().toISOString(),
-      s.timing.submittedAt?.toDate().toISOString() ?? '',
+      asTimestamp(s.timing.startedAt).toDate().toISOString(),
+      s.timing.submittedAt ? asTimestamp(s.timing.submittedAt).toDate().toISOString() : '',
     ];
   });
   return [header, ...rows].map((r) => r.map(csvEscape).join(',')).join('\n');

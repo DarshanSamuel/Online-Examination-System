@@ -127,11 +127,36 @@ export async function getAttemptResult(user: AuthedUser, examId: string) {
   if (sub.status !== 'graded' || !exam?.settings.showResultsToCandidate) return { ...base, released: false as const };
 
   const g = sub.grading;
+  const rawHistory = sub.attemptHistory && sub.attemptHistory.length > 0
+    ? sub.attemptHistory
+    : [
+        {
+          attemptNumber: attemptCount,
+          status: sub.status,
+          submitReason: sub.submitReason,
+          startedAt: sub.timing.startedAt,
+          submittedAt: sub.timing.submittedAt,
+          totalScore: g.totalScore,
+          maxScore: g.maxScore,
+          warningCount: sub.proctoring.warningCount,
+        },
+      ];
+
   return {
     ...base,
     released: true as const,
     totalScore: g.totalScore,
     maxScore: g.maxScore,
+    attemptHistory: rawHistory.map((h) => ({
+      attemptNumber: h.attemptNumber,
+      status: h.status,
+      submitReason: h.submitReason,
+      startedAt: toMillis(h.startedAt),
+      submittedAt: h.submittedAt ? toMillis(h.submittedAt) : null,
+      totalScore: h.totalScore,
+      maxScore: h.maxScore,
+      warningCount: h.warningCount,
+    })),
     questions: sub.questionMap
       .slice()
       .sort((a, b) => a.order - b.order)

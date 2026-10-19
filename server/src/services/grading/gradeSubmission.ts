@@ -3,7 +3,7 @@ import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { answerKeyRef, collections, db } from '../../config/firebase.js';
 import { logger } from '../../lib/logger.js';
 import { mapLimit, round2 } from '../../lib/util.js';
-import type { AnswerKeyDoc, QuestionDoc, QuestionGrade, QuestionMapEntry, SubmissionDoc } from '../../types/schema.js';
+import type { AnswerKeyDoc, AttemptHistoryEntry, QuestionDoc, QuestionGrade, QuestionMapEntry, SubmissionDoc } from '../../types/schema.js';
 import { runner } from '../execution/index.js';
 import { gradeCoding } from './code.js';
 import { gradeMcq, gradeNumerical } from './objective.js';
@@ -60,16 +60,35 @@ export async function gradeSubmission(submissionId: string, opts: { force?: bool
     const perQuestion = Object.fromEntries(grades) as Record<string, QuestionGrade>;
     const totalScore = round2(Object.values(perQuestion).reduce((s, g) => s + g.score, 0));
     const maxScore = round2(sub.questionMap.reduce((s, e) => s + e.points, 0));
+    const gradedAt = Timestamp.now();
+
+    const attemptNumber = sub.attemptCount ?? 1;
+    const currentEntry: AttemptHistoryEntry = {
+      attemptNumber,
+      status: 'graded',
+      submitReason: sub.submitReason,
+      startedAt: sub.timing.startedAt,
+      submittedAt: sub.timing.submittedAt ?? gradedAt,
+      totalScore,
+      maxScore,
+      warningCount: sub.proctoring.warningCount,
+      perQuestion,
+    };
+    const attemptHistory = [
+      ...(sub.attemptHistory ?? []).filter((h) => h.attemptNumber !== attemptNumber),
+      currentEntry,
+    ].sort((a, b) => a.attemptNumber - b.attemptNumber);
 
     await ref.update({
       status: 'graded',
+      attemptHistory,
       'grading.perQuestion': perQuestion,
       'grading.totalScore': totalScore,
       'grading.maxScore': maxScore,
-      'grading.gradedAt': Timestamp.now(),
+      'grading.gradedAt': gradedAt,
       'grading.lastError': null,
     });
-    logger.info('Submission graded', { submissionId, totalScore, maxScore });
+    logger.info('Submission graded', { submissionId, attemptNumber, totalScore, maxScore });
   } catch (err) {
     logger.error('Grading failed', { submissionId, err: (err as Error).message });
     await ref.update({ status: 'grading_failed', 'grading.lastError': (err as Error).message.slice(0, 500) });

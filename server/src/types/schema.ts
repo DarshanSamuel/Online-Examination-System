@@ -243,6 +243,18 @@ export interface GradingState {
   perQuestion: Record<string, QuestionGrade>;
 }
 
+export interface AttemptHistoryEntry {
+  attemptNumber: number;
+  status: SubmissionStatus;
+  submitReason: SubmitReason | null;
+  startedAt: Timestamp;
+  submittedAt: Timestamp | null;
+  totalScore: number | null;
+  maxScore: number | null;
+  warningCount: number;
+  perQuestion?: Record<string, QuestionGrade>;
+}
+
 export interface SubmissionDoc {
   examId: string;
   candidateUid: string;
@@ -251,6 +263,7 @@ export interface SubmissionDoc {
   status: SubmissionStatus;
   submitReason: SubmitReason | null;
   attemptCount?: number;
+  attemptHistory?: AttemptHistoryEntry[];
   /** Settings copied at start so every write doesn't need to re-read the exam. */
   examSnapshot: {
     title: string;

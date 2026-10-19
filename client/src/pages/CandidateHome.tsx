@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { ArrowRight, CheckCircle2, ClipboardList, PlayCircle } from 'lucide-react';
@@ -9,35 +9,83 @@ import { AppHeader } from '../components/ui/AppHeader';
 import { btnPrimary, card, statusTone } from '../components/ui/styles';
 import { cn } from '../lib/utils';
 
-/** Candidate home: live list of assigned exams (Firestore rules restrict to the user's own email). */
+interface PublishedExamDoc {
+  id: string;
+  title: string;
+  status: string;
+}
+
+/**
+ * Candidate home: shows all exams explicitly assigned to the candidate's email
+ * PLUS any published exams so students can immediately see and take published assessments.
+ */
 export function CandidateHome() {
   const { user } = useAuth();
-  const [items, setItems] = useState<(AssignmentDoc & { id: string })[] | null>(null);
+  const [assignments, setAssignments] = useState<(AssignmentDoc & { id: string })[] | null>(null);
+  const [publishedExams, setPublishedExams] = useState<PublishedExamDoc[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user?.email) return;
-    const q = query(collection(db, 'assignments'), where('candidateEmail', '==', user.email.toLowerCase()));
-    return onSnapshot(
-      q,
-      (snap) => setItems(snap.docs.map((d) => ({ id: d.id, ...(d.data() as AssignmentDoc) }))),
+    const email = user.email.toLowerCase();
+    const unsubAsg = onSnapshot(
+      query(collection(db, 'assignments'), where('candidateEmail', '==', email)),
+      (snap) => setAssignments(snap.docs.map((d) => ({ id: d.id, ...(d.data() as AssignmentDoc) }))),
       () => setError('Could not load your exams.'),
     );
+    const unsubExams = onSnapshot(
+      query(collection(db, 'exams'), where('status', '==', 'published')),
+      (snap) =>
+        setPublishedExams(
+          snap.docs.map((d) => {
+            const data = d.data() as { title: string; status: string };
+            return { id: d.id, title: data.title, status: data.status };
+          }),
+        ),
+      () => setPublishedExams([]),
+    );
+    return () => {
+      unsubAsg();
+      unsubExams();
+    };
   }, [user?.email]);
+
+  const items = useMemo(() => {
+    if (assignments === null && publishedExams === null) return null;
+    const byExamId = new Map<string, AssignmentDoc & { id: string }>();
+
+    for (const a of assignments ?? []) {
+      byExamId.set(a.examId, a);
+    }
+
+    for (const e of publishedExams ?? []) {
+      if (!byExamId.has(e.id)) {
+        byExamId.set(e.id, {
+          id: `${e.id}_${user?.email?.toLowerCase() ?? ''}`,
+          examId: e.id,
+          examTitle: e.title,
+          candidateEmail: user?.email?.toLowerCase() ?? '',
+          status: 'assigned',
+        });
+      }
+    }
+
+    return Array.from(byExamId.values());
+  }, [assignments, publishedExams, user?.email]);
 
   return (
     <div className="min-h-screen bg-transparent">
       <AppHeader />
       <main className="animate-page-enter mx-auto max-w-4xl px-6 py-10">
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">My exams</h1>
-        <p className="mt-1 text-sm text-slate-500">Exams assigned to {user?.email}</p>
+        <p className="mt-1 text-sm text-slate-500">Available and assigned exams for {user?.email}</p>
 
         {error && <p className="mt-6 text-red-600">{error}</p>}
         {items === null && !error && <p className="mt-6 animate-pulse text-slate-400">Loading…</p>}
         {items?.length === 0 && (
           <div className="animate-tab-enter mt-10 flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white/60 p-10 text-center text-slate-500">
             <ClipboardList className="mb-3 h-8 w-8 text-slate-400" />
-            No exams assigned yet.
+            No exams published or assigned yet.
           </div>
         )}
 

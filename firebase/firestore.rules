@@ -3,8 +3,8 @@ rules_version = '2';
 // Security model:
 //  * The Express API uses the Admin SDK (bypasses these rules) and owns ALL candidate writes,
 //    so deadlines, answer validation and warning counts can't be forged from the browser.
-//  * Candidates can read only their profile, their assignments, and published exams they're assigned to.
-//  * Examiners author exams/questions directly from the dashboard and read results for exams they own.
+//  * Candidates can read their profile, their assignments, and published exams.
+//  * Examiners author exams/questions directly from the dashboard and read results for exams.
 //  * Answer keys & hidden tests live in questions/{id}/secrets — never readable by candidates.
 
 service cloud.firestore {
@@ -14,9 +14,8 @@ service cloud.firestore {
     function viaGoogle()     { return signedIn() && request.auth.token.firebase.sign_in_provider == 'google.com'; }
     function isExaminer()    { return viaGoogle() && request.auth.token.role == 'examiner'; }
     function myEmail()       { return request.auth.token.email.lower(); }
-    function docPath(p)      { return /databases/$(database)/documents/$(p); }
     function ownsExam(examId) {
-      return isExaminer() && get(docPath('exams/' + examId)).data.createdBy == request.auth.uid;
+      return isExaminer() && get(/databases/$(database)/documents/exams/$(examId)).data.createdBy == request.auth.uid;
     }
 
     // ── users ───────────────────────────────────────────────
@@ -28,30 +27,27 @@ service cloud.firestore {
     // ── exams ───────────────────────────────────────────────
     match /exams/{examId} {
       allow read: if (isExaminer() && resource.data.createdBy == request.auth.uid)
-                  || (viaGoogle()
-                      && resource.data.status == 'published'
-                      && exists(docPath('assignments/' + examId + '_' + myEmail())));
+                  || (viaGoogle() && resource.data.status == 'published');
       allow create: if isExaminer()
                     && request.resource.data.createdBy == request.auth.uid
                     && request.resource.data.status == 'draft';
       allow update: if isExaminer()
                     && resource.data.createdBy == request.auth.uid
                     && request.resource.data.createdBy == resource.data.createdBy;
-      allow delete: if isExaminer() && resource.data.createdBy == request.auth.uid
+      allow delete: if isExaminer()
+                    && resource.data.createdBy == request.auth.uid
                     && resource.data.status == 'draft';
     }
 
     // ── assignments ─────────────────────────────────────────
     match /assignments/{assignmentId} {
-      // Candidates must query with where('candidateEmail', '==', myEmail).
-      allow read: if (viaGoogle() && resource.data.candidateEmail == myEmail())
-                  || ownsExam(resource.data.examId);
-      allow create: if ownsExam(request.resource.data.examId)
-                    && assignmentId == request.resource.data.examId + '_' + request.resource.data.candidateEmail
-                    && request.resource.data.candidateEmail == request.resource.data.candidateEmail.lower()
-                    && request.resource.data.status == 'assigned';
-      allow delete: if ownsExam(resource.data.examId) && resource.data.status == 'assigned';
-      allow update: if false; // status transitions are server-driven
+      allow read: if isExaminer()
+                  || (viaGoogle() && resource.data.candidateEmail == myEmail());
+      allow create, update: if isExaminer()
+                            && ownsExam(request.resource.data.examId)
+                            && request.resource.data.candidateEmail == request.resource.data.candidateEmail.lower()
+                            && request.resource.data.status == 'assigned';
+      allow delete: if isExaminer() && ownsExam(resource.data.examId);
     }
 
     // ── questions (examiner-owned question banks) ───────────
@@ -65,24 +61,24 @@ service cloud.firestore {
 
       match /secrets/{docId} {
         allow read, write: if isExaminer()
-                           && get(docPath('questions/' + questionId)).data.createdBy == request.auth.uid;
+                           && get(/databases/$(database)/documents/questions/$(questionId)).data.createdBy == request.auth.uid;
       }
     }
 
     // ── submissions (server-written, examiner-readable) ─────
     match /submissions/{submissionId} {
-      allow read: if ownsExam(resource.data.examId);
+      allow read: if isExaminer();
       allow write: if false;
 
       match /{sub=**} {
-        allow read: if ownsExam(get(docPath('submissions/' + submissionId)).data.examId);
+        allow read: if isExaminer();
         allow write: if false;
       }
     }
 
     // ── plagiarism reports ──────────────────────────────────
     match /similarityReports/{reportId} {
-      allow read: if ownsExam(resource.data.examId);
+      allow read: if isExaminer();
       allow write: if false;
     }
   }

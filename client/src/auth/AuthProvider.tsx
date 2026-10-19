@@ -30,8 +30,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   const establishSession = useCallback(async (u: User) => {
-    const { data } = await api.post<{ role: Role; claimsUpdated: boolean }>('/auth/session');
-    const token = await u.getIdTokenResult(data.claimsUpdated);
+    await api.post<{ role: Role; claimsUpdated: boolean }>('/auth/session');
+    const token = await u.getIdTokenResult(true);
     setRole(token.claims.role === 'examiner' ? 'examiner' : 'candidate');
   }, []);
 

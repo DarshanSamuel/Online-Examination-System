@@ -52,7 +52,6 @@ export async function startAttempt(user: AuthedUser, examId: string, client: { u
     const [examSnap, asgSnap, subSnap] = await tx.getAll(examRef, asgRef, subRef);
     const exam = examSnap.data() as ExamDoc | undefined;
     if (!exam || exam.status !== 'published') throw new HttpError(404, 'Exam not found', 'EXAM_NOT_FOUND');
-    if (!asgSnap.exists) throw new HttpError(403, 'You are not assigned to this exam', 'NOT_ASSIGNED');
 
     const nowMs = Date.now();
 
@@ -104,7 +103,20 @@ export async function startAttempt(user: AuthedUser, examId: string, client: { u
     };
 
     tx.create(subRef, doc);
-    tx.update(asgRef, { status: 'started', candidateUid: user.uid, startedAt } satisfies Partial<AssignmentDoc>);
+    if (asgSnap.exists) {
+      tx.update(asgRef, { status: 'started', candidateUid: user.uid, startedAt } satisfies Partial<AssignmentDoc>);
+    } else {
+      tx.set(asgRef, {
+        examId,
+        examTitle: exam.title,
+        candidateEmail: user.email.toLowerCase(),
+        candidateUid: user.uid,
+        assignedBy: exam.createdBy,
+        assignedAt: startedAt,
+        startedAt,
+        status: 'started',
+      } satisfies AssignmentDoc);
+    }
     return { submissionId: id, resumed: false, startedAt: nowMs, deadlineAt: deadlineMs, serverNow: nowMs };
   });
 }

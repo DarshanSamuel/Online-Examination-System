@@ -85,6 +85,18 @@ function candidateAnswers(sub: SubmissionDoc) {
   );
 }
 
+function toMillis(v: unknown): number {
+  if (v && typeof v === 'object') {
+    if (typeof (v as { toMillis?: unknown }).toMillis === 'function') {
+      return (v as { toMillis: () => number }).toMillis();
+    }
+    const sec = (v as { seconds?: number; _seconds?: number }).seconds ?? (v as { _seconds?: number })._seconds;
+    const nano = (v as { nanoseconds?: number; _nanoseconds?: number }).nanoseconds ?? (v as { _nanoseconds?: number })._nanoseconds ?? 0;
+    if (typeof sec === 'number') return sec * 1000 + Math.floor(nano / 1_000_000);
+  }
+  return Date.now();
+}
+
 /**
  * Candidate-visible outcome. Scores are only revealed when the examiner enabled
  * `showResultsToCandidate`; hidden test details are never included.
@@ -93,7 +105,24 @@ export async function getAttemptResult(user: AuthedUser, examId: string) {
   const id = makeSubmissionId(examId, user.uid);
   const { sub } = await loadOwnedSubmission(id, user.uid);
   const exam = (await collections.exams.doc(examId).get()).data() as ExamDoc | undefined;
-  const base = { submissionId: id, examTitle: sub.examSnapshot.title, status: sub.status, submitReason: sub.submitReason, submittedAt: sub.timing.submittedAt?.toMillis() ?? null };
+
+  const attemptCount = sub.attemptCount ?? 1;
+  const maxAttempts = exam?.settings.maxAttempts ?? 0;
+  const closesAt = exam ? toMillis(exam.window.closesAt) : null;
+  const isOpen = exam?.status === 'published' && closesAt != null && Date.now() < closesAt;
+  const canReattempt = Boolean(isOpen && (maxAttempts === 0 || attemptCount < maxAttempts));
+
+  const base = {
+    submissionId: id,
+    examTitle: sub.examSnapshot.title,
+    status: sub.status,
+    submitReason: sub.submitReason,
+    submittedAt: sub.timing.submittedAt?.toMillis() ?? null,
+    attemptCount,
+    maxAttempts,
+    closesAt,
+    canReattempt,
+  };
 
   if (sub.status !== 'graded' || !exam?.settings.showResultsToCandidate) return { ...base, released: false as const };
 

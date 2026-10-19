@@ -15,6 +15,7 @@ const DEFAULT_SETTINGS: ExamSettings = {
   shuffleOptions: true,
   allowedLanguages: ['python', 'javascript', 'cpp', 'java'],
   maxWarnings: 3,
+  maxAttempts: 0,
   requireFullscreen: true,
   requireWebcam: false,
   requireMicrophone: false,
@@ -158,17 +159,27 @@ export function ExamEditor() {
               <label className={label}>Duration (minutes)</label>
               <input className={input} inputMode="numeric" value={duration} onChange={(e) => setDuration(e.target.value)} />
             </div>
-            <div />
+            <div>
+              <label className={label}>Max attempts per student (0 = unlimited until closing)</label>
+              <input
+                className={input}
+                inputMode="numeric"
+                value={settings.maxAttempts ?? 0}
+                onChange={(e) => patchSettings('maxAttempts', Math.max(0, Math.floor(Number(e.target.value) || 0)))}
+              />
+            </div>
             <div>
               <label className={label}>Opens at</label>
               <input type="datetime-local" className={input} value={opensAt} onChange={(e) => setOpensAt(e.target.value)} />
             </div>
             <div>
-              <label className={label}>Closes at</label>
+              <label className={label}>Submissions close at</label>
               <input type="datetime-local" className={input} value={closesAt} onChange={(e) => setClosesAt(e.target.value)} />
             </div>
           </div>
-          <p className="mt-2.5 text-xs text-slate-500">Each candidate gets the duration from the moment they start, but never past the closing time.</p>
+          <p className="mt-2.5 text-xs text-slate-500">
+            Each candidate gets the duration from the moment they start, but never past the closing time. Set max attempts to <strong>0</strong> for unlimited reattempts until closing time, or enter <strong>1, 2, 3…</strong> to cap attempts.
+          </p>
         </section>
 
         <section className={cn(card, 'p-6')}>

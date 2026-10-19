@@ -1,16 +1,21 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, CheckCircle2, Hourglass, Lock, XCircle } from 'lucide-react';
+import { ArrowLeft, CalendarClock, CheckCircle2, Hourglass, Lock, Repeat, RotateCcw, XCircle } from 'lucide-react';
 import { api, apiErrorMessage } from '../lib/api';
 import { AppHeader } from '../components/ui/AppHeader';
 import { FullPageSpinner } from '../components/ui/FullPageSpinner';
-import { card } from '../components/ui/styles';
+import { btnGhost, btnPrimary, card } from '../components/ui/styles';
 import { cn } from '../lib/utils';
+import { formatTimeRemaining } from './CandidateHome';
 
 interface Result {
   examTitle: string;
   status: string;
   released: boolean;
+  attemptCount?: number;
+  maxAttempts?: number;
+  closesAt?: number | null;
+  canReattempt?: boolean;
   totalScore?: number;
   maxScore?: number;
   questions?: { questionId: string; type: string; score: number; maxScore: number; status: string }[];
@@ -48,6 +53,9 @@ export function ResultPage() {
 
   const grading = ['submitted', 'grading'].includes(data.status);
   const pct = data.released && data.maxScore ? Math.round(((data.totalScore ?? 0) / data.maxScore) * 100) : null;
+  const used = data.attemptCount ?? 1;
+  const max = data.maxAttempts ?? 0;
+  const left = max > 0 ? Math.max(0, max - used) : null;
 
   return (
     <div className="min-h-screen bg-transparent">
@@ -89,6 +97,39 @@ export function ResultPage() {
               </ul>
             </div>
           )}
+
+          {/* Reattempt & closing window summary */}
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-2 border-t border-slate-100 pt-5 text-xs">
+            {max > 0 ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-primary-50 px-3 py-1 font-medium text-primary-700 ring-1 ring-inset ring-primary-200">
+                <Repeat className="h-3.5 w-3.5" />
+                {left && left > 0 ? `${left} of ${max} ${left === 1 ? 'attempt' : 'attempts'} left` : `All ${max} attempts used`}
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-600 ring-1 ring-inset ring-slate-200">
+                <Repeat className="h-3.5 w-3.5" />
+                Attempt #{used} · Unlimited attempts until close
+              </span>
+            )}
+
+            {data.closesAt != null && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1 font-medium text-amber-800 ring-1 ring-inset ring-amber-200">
+                <CalendarClock className="h-3.5 w-3.5" />
+                {formatTimeRemaining(data.closesAt, Date.now())} ({new Date(data.closesAt).toLocaleString()})
+              </span>
+            )}
+          </div>
+
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+            <Link to="/" className={btnGhost}>
+              Back to my exams
+            </Link>
+            {data.canReattempt && examId && (
+              <Link to={`/exam/${examId}/lobby`} className={btnPrimary}>
+                <RotateCcw className="h-4 w-4" /> Reattempt exam
+              </Link>
+            )}
+          </div>
         </div>
       </main>
     </div>

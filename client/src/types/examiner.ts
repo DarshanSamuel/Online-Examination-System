@@ -73,6 +73,8 @@ export interface ExamSettings {
   shuffleOptions: boolean;
   allowedLanguages: LanguageKey[];
   maxWarnings: number;
+  /** 0 = unlimited attempts until closing time; > 0 = max attempts per candidate. */
+  maxAttempts?: number;
   requireFullscreen: boolean;
   requireWebcam: boolean;
   requireMicrophone: boolean;
@@ -103,6 +105,7 @@ export interface Assignment {
   candidateEmail: string;
   candidateUid: string | null;
   status: 'assigned' | 'started' | 'submitted';
+  attemptCount?: number;
 }
 
 export interface QuestionGrade {
@@ -121,6 +124,7 @@ export interface Submission {
   candidateName: string;
   status: 'in_progress' | 'submitted' | 'grading' | 'graded' | 'grading_failed';
   submitReason: string | null;
+  attemptCount?: number;
   timing: { startedAt: Timestamp; deadlineAt: Timestamp; submittedAt: Timestamp | null };
   questionMap: { questionId: string; sectionId: string; type: 'mcq' | 'numerical' | 'coding'; points: number; order: number; optionOrder: string[] | null }[];
   answers: Record<string, { type: string; selectedOptionId?: string | null; value?: string; language?: LanguageKey; code?: string }>;

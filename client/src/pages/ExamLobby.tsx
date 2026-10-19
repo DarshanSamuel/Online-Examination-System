@@ -52,6 +52,13 @@ export function ExamLobby() {
         await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
       }
       const { data } = await api.post<StartResult>(`/attempts/exams/${examId}/start`);
+      if (!data.resumed) {
+        try {
+          localStorage.removeItem(`exam:${data.submissionId}:v1`);
+        } catch {
+          /* ignore */
+        }
+      }
       navigate(`/attempt/${data.submissionId}`, { replace: true });
     } catch (err) {
       setError(apiErrorMessage(err));

@@ -58,6 +58,8 @@ export interface ExamSettings {
   allowedLanguages: LanguageKey[];
   /** Attempt is auto-submitted when warningCount reaches this value. */
   maxWarnings: number;
+  /** 0 or undefined = unlimited attempts until window.closesAt; > 0 = max attempts per candidate. */
+  maxAttempts?: number;
   requireFullscreen: boolean;
   requireWebcam: boolean;
   requireMicrophone: boolean;
@@ -93,6 +95,7 @@ export interface AssignmentDoc {
   assignedBy: string;
   assignedAt: Timestamp;
   status: 'assigned' | 'started' | 'submitted';
+  attemptCount?: number;
   startedAt?: Timestamp;
   submittedAt?: Timestamp;
 }
@@ -247,6 +250,7 @@ export interface SubmissionDoc {
   candidateName: string;
   status: SubmissionStatus;
   submitReason: SubmitReason | null;
+  attemptCount?: number;
   /** Settings copied at start so every write doesn't need to re-read the exam. */
   examSnapshot: {
     title: string;

@@ -66,18 +66,33 @@ export async function startAttempt(user: AuthedUser, examId: string, client: { u
     if (!exam || exam.status !== 'published') throw new HttpError(404, 'Exam not found', 'EXAM_NOT_FOUND');
 
     const nowMs = Date.now();
-
-    // Resume (page refresh / device switch) — never resets the clock.
-    if (subSnap.exists) {
-      const sub = subSnap.data() as SubmissionDoc;
-      assertActive(sub, nowMs);
-      return { submissionId: id, resumed: true, startedAt: sub.timing.startedAt.toMillis(), deadlineAt: sub.timing.deadlineAt.toMillis(), serverNow: nowMs };
-    }
-
     const opensMs = toMillis(exam.window.opensAt);
     const closesMs = toMillis(exam.window.closesAt);
-    if (nowMs < opensMs) throw new HttpError(403, 'Exam has not opened yet', 'EXAM_NOT_OPEN');
-    if (nowMs >= closesMs) throw new HttpError(403, 'Exam window has closed', 'EXAM_CLOSED');
+
+    let attemptCount = 1;
+
+    if (subSnap.exists) {
+      const sub = subSnap.data() as SubmissionDoc;
+      const hardStop = sub.timing.deadlineAt.toMillis() + sub.examSnapshot.gracePeriodSec * 1000;
+      // Resume an active in-progress attempt (page refresh / device switch) — never resets the clock.
+      if (sub.status === 'in_progress' && nowMs <= hardStop) {
+        return { submissionId: id, resumed: true, startedAt: sub.timing.startedAt.toMillis(), deadlineAt: sub.timing.deadlineAt.toMillis(), serverNow: nowMs };
+      }
+
+      // Otherwise the candidate is starting a reattempt — verify window and attempt allowance.
+      if (nowMs < opensMs) throw new HttpError(403, 'Exam has not opened yet', 'EXAM_NOT_OPEN');
+      if (nowMs >= closesMs) throw new HttpError(403, 'Exam window has closed', 'EXAM_CLOSED');
+
+      const prevAttempts = sub.attemptCount ?? (asgSnap.exists ? (asgSnap.data() as AssignmentDoc).attemptCount : undefined) ?? 1;
+      const maxAttempts = exam.settings.maxAttempts ?? 0; // 0 = unlimited until closing time
+      if (maxAttempts > 0 && prevAttempts >= maxAttempts) {
+        throw new HttpError(403, `No attempts remaining (${prevAttempts}/${maxAttempts} used)`, 'MAX_ATTEMPTS_REACHED');
+      }
+      attemptCount = prevAttempts + 1;
+    } else {
+      if (nowMs < opensMs) throw new HttpError(403, 'Exam has not opened yet', 'EXAM_NOT_OPEN');
+      if (nowMs >= closesMs) throw new HttpError(403, 'Exam window has closed', 'EXAM_CLOSED');
+    }
 
     const deadlineMs = Math.min(nowMs + exam.durationMinutes * 60_000, closesMs);
     const questionMap = await buildQuestionMap(tx, exam);
@@ -90,6 +105,7 @@ export async function startAttempt(user: AuthedUser, examId: string, client: { u
       candidateName: user.name,
       status: 'in_progress',
       submitReason: null,
+      attemptCount,
       examSnapshot: {
         title: exam.title,
         allowedLanguages: exam.settings.allowedLanguages,
@@ -116,9 +132,9 @@ export async function startAttempt(user: AuthedUser, examId: string, client: { u
       client,
     };
 
-    tx.create(subRef, doc);
+    tx.set(subRef, doc);
     if (asgSnap.exists) {
-      tx.update(asgRef, { status: 'started', candidateUid: user.uid, startedAt } satisfies Partial<AssignmentDoc>);
+      tx.update(asgRef, { status: 'started', candidateUid: user.uid, startedAt, attemptCount } satisfies Partial<AssignmentDoc>);
     } else {
       tx.set(asgRef, {
         examId,
@@ -129,6 +145,7 @@ export async function startAttempt(user: AuthedUser, examId: string, client: { u
         assignedAt: startedAt,
         startedAt,
         status: 'started',
+        attemptCount,
       } satisfies AssignmentDoc);
     }
     return { submissionId: id, resumed: false, startedAt: nowMs, deadlineAt: deadlineMs, serverNow: nowMs };
@@ -185,7 +202,11 @@ export async function finalizeAttempt(id: string, reason: SubmitReason): Promise
 
     const now = Timestamp.now();
     tx.update(ref, { status: 'submitted', submitReason: reason, 'timing.submittedAt': now });
-    tx.update(collections.assignments.doc(assignmentId(sub.examId, sub.candidateEmail)), { status: 'submitted', submittedAt: now });
+    tx.set(
+      collections.assignments.doc(assignmentId(sub.examId, sub.candidateEmail)),
+      { status: 'submitted', submittedAt: now, attemptCount: sub.attemptCount ?? 1 },
+      { merge: true },
+    );
     return true;
   });
 

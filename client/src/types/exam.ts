@@ -127,4 +127,5 @@ export interface AssignmentDoc {
   examTitle: string;
   candidateEmail: string;
   status: 'assigned' | 'started' | 'submitted';
+  attemptCount?: number;
 }

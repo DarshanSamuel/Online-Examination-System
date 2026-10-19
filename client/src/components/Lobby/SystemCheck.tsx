@@ -13,7 +13,8 @@ interface Props {
 
 /**
  * Pre-exam lobby check: browser capabilities, live camera preview, and a mic level meter.
- * The stream is released on unmount; ProctoringEngine re-acquires it inside the exam.
+ * Camera and microphone are only required when the examiner marks them mandatory;
+ * otherwise they pass immediately as optional.
  */
 export function SystemCheck({ requireWebcam, requireMicrophone, requireFullscreen, onReadyChange }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -21,13 +22,14 @@ export function SystemCheck({ requireWebcam, requireMicrophone, requireFullscree
   const [browserIssues, setBrowserIssues] = useState<string[]>([]);
   const [camera, setCamera] = useState<State>(requireWebcam ? 'checking' : 'passed');
   const [mic, setMic] = useState<State>(requireMicrophone ? 'checking' : 'passed');
-  const [micPeak, setMicPeak] = useState(0);
   const [level, setLevel] = useState(0);
 
   useEffect(() => {
     const issues: string[] = [];
     if (!window.isSecureContext) issues.push('Page must be served over HTTPS');
-    if (!navigator.mediaDevices?.getUserMedia) issues.push('Camera API not supported');
+    if ((requireWebcam || requireMicrophone) && !navigator.mediaDevices?.getUserMedia) {
+      issues.push('Media device API not supported in this browser');
+    }
     if (requireFullscreen && !document.fullscreenEnabled) issues.push('Fullscreen not supported');
     try {
       localStorage.setItem('__probe', '1');
@@ -38,95 +40,137 @@ export function SystemCheck({ requireWebcam, requireMicrophone, requireFullscree
     if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) issues.push('Please use a desktop or laptop computer');
     setBrowserIssues(issues);
     setBrowser(issues.length ? 'failed' : 'passed');
-  }, [requireFullscreen]);
+  }, [requireFullscreen, requireWebcam, requireMicrophone]);
 
   useEffect(() => {
+    setCamera(requireWebcam ? 'checking' : 'passed');
+    setMic(requireMicrophone ? 'checking' : 'passed');
+
     if (!requireWebcam && !requireMicrophone) return;
-    let stream: MediaStream | null = null;
+    let videoStream: MediaStream | null = null;
+    let audioStream: MediaStream | null = null;
     let ctx: AudioContext | null = null;
     let raf = 0;
     let cancelled = false;
 
     (async () => {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: requireWebcam, audio: requireMicrophone });
-      } catch {
-        if (requireWebcam) setCamera('failed');
-        if (requireMicrophone) setMic('failed');
-        return;
-      }
-      if (cancelled) return stream.getTracks().forEach((t) => t.stop());
-
+      // Request camera independently if mandatory
       if (requireWebcam) {
-        const ok = stream.getVideoTracks().some((t) => t.readyState === 'live');
-        setCamera(ok ? 'passed' : 'failed');
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          void videoRef.current.play().catch(() => {});
+        try {
+          videoStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          if (cancelled) {
+            videoStream.getTracks().forEach((t) => t.stop());
+            return;
+          }
+          const ok = videoStream.getVideoTracks().some((t) => t.readyState === 'live');
+          setCamera(ok ? 'passed' : 'failed');
+          if (videoRef.current) {
+            videoRef.current.srcObject = videoStream;
+            void videoRef.current.play().catch(() => {});
+          }
+        } catch {
+          if (!cancelled) setCamera('failed');
         }
       }
 
-      if (requireMicrophone && stream.getAudioTracks().length) {
-        ctx = new AudioContext();
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 1024;
-        ctx.createMediaStreamSource(stream).connect(analyser);
-        const buf = new Uint8Array(analyser.fftSize);
-        const tick = () => {
-          analyser.getByteTimeDomainData(buf);
-          let peak = 0;
-          for (const v of buf) peak = Math.max(peak, Math.abs(v - 128));
-          const pct = Math.min(100, (peak / 128) * 250);
-          setLevel(pct);
-          setMicPeak((p) => Math.max(p, pct));
-          raf = requestAnimationFrame(tick);
-        };
-        tick();
+      // Request microphone independently if mandatory
+      if (requireMicrophone) {
+        try {
+          audioStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+          if (cancelled) {
+            audioStream.getTracks().forEach((t) => t.stop());
+            return;
+          }
+          const hasLiveTrack = audioStream.getAudioTracks().some((t) => t.readyState === 'live');
+          // Pass immediately once a live audio track is acquired (don't block on room noise threshold)
+          setMic(hasLiveTrack ? 'passed' : 'failed');
+
+          if (hasLiveTrack) {
+            ctx = new AudioContext();
+            await ctx.resume().catch(() => {});
+            const analyser = ctx.createAnalyser();
+            analyser.fftSize = 1024;
+            ctx.createMediaStreamSource(audioStream).connect(analyser);
+            const buf = new Uint8Array(analyser.fftSize);
+            const tick = () => {
+              analyser.getByteTimeDomainData(buf);
+              let peak = 0;
+              for (const v of buf) peak = Math.max(peak, Math.abs(v - 128));
+              const pct = Math.min(100, (peak / 128) * 300);
+              setLevel(pct);
+              raf = requestAnimationFrame(tick);
+            };
+            tick();
+          }
+        } catch {
+          if (!cancelled) setMic('failed');
+        }
       }
     })();
 
     return () => {
       cancelled = true;
       cancelAnimationFrame(raf);
-      stream?.getTracks().forEach((t) => t.stop());
+      videoStream?.getTracks().forEach((t) => t.stop());
+      audioStream?.getTracks().forEach((t) => t.stop());
       void ctx?.close();
     };
   }, [requireWebcam, requireMicrophone]);
-
-  // The mic passes once we've actually heard something — proves it isn't muted.
-  useEffect(() => {
-    if (requireMicrophone && mic === 'checking' && micPeak > 15) setMic('passed');
-  }, [micPeak, mic, requireMicrophone]);
 
   const ready = browser === 'passed' && camera === 'passed' && mic === 'passed';
   useEffect(() => onReadyChange(ready), [ready, onReadyChange]);
 
   return (
     <div className="grid gap-6 md:grid-cols-2">
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-900">
+      <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-slate-900">
         {requireWebcam ? (
           <video ref={videoRef} muted playsInline className="aspect-video w-full -scale-x-100 object-cover" />
         ) : (
-          <div className="flex aspect-video items-center justify-center text-sm text-slate-400">Webcam not required</div>
+          <div className="flex aspect-video flex-col items-center justify-center gap-2 px-4 text-center text-sm text-slate-400">
+            <Camera className="h-7 w-7 text-slate-500" />
+            <span>Webcam is optional for this exam</span>
+          </div>
         )}
       </div>
 
       <ul className="space-y-3">
-        <Item icon={Globe} label="Browser compatibility" state={browser} detail={browserIssues.join(' · ') || undefined} />
-        {requireWebcam && <Item icon={Camera} label="Webcam" state={camera} detail={camera === 'failed' ? 'Allow camera access in the address bar and reload' : undefined} />}
-        {requireMicrophone && (
-          <Item
-            icon={Mic}
-            label="Microphone"
-            state={mic}
-            detail={mic === 'failed' ? 'Allow microphone access and reload' : mic === 'checking' ? 'Say something to test your mic' : undefined}
-          >
-            <div className="mt-2 h-1.5 overflow-hidden rounded bg-slate-200">
-              <div className="h-full bg-emerald-500 transition-[width]" style={{ width: `${level}%` }} />
+        <Item icon={Globe} label="Browser compatibility" state={browser} detail={browserIssues.join(' · ') || 'Supported desktop browser'} />
+        <Item
+          icon={Camera}
+          label={requireWebcam ? 'Webcam (Mandatory)' : 'Webcam (Optional)'}
+          state={camera}
+          detail={
+            !requireWebcam
+              ? 'Not required by examiner for this exam'
+              : camera === 'failed'
+                ? 'Allow camera access in your browser address bar and reload'
+                : 'Camera connected and active'
+          }
+        />
+        <Item
+          icon={Mic}
+          label={requireMicrophone ? 'Microphone (Mandatory)' : 'Microphone (Optional)'}
+          state={mic}
+          detail={
+            !requireMicrophone
+              ? 'Not required by examiner for this exam'
+              : mic === 'failed'
+                ? 'Allow microphone access in your browser address bar and reload'
+                : 'Microphone connected — speak to test input level'
+          }
+        >
+          {requireMicrophone && (
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
+              <div className="h-full bg-emerald-500 transition-[width] duration-75" style={{ width: `${Math.max(6, level)}%` }} />
             </div>
-          </Item>
-        )}
-        {requireFullscreen && <Item icon={Maximize} label="Fullscreen" state={browser === 'failed' ? 'failed' : 'passed'} detail="The exam opens in fullscreen when you start" />}
+          )}
+        </Item>
+        <Item
+          icon={Maximize}
+          label={requireFullscreen ? 'Fullscreen (Mandatory)' : 'Fullscreen (Optional)'}
+          state={browser === 'failed' ? 'failed' : 'passed'}
+          detail={requireFullscreen ? 'The exam opens in fullscreen when you start' : 'Fullscreen is optional for this exam'}
+        />
       </ul>
     </div>
   );
@@ -134,7 +178,7 @@ export function SystemCheck({ requireWebcam, requireMicrophone, requireFullscree
 
 function Item({ icon: Icon, label, state, detail, children }: { icon: typeof Camera; label: string; state: State; detail?: string; children?: React.ReactNode }) {
   return (
-    <li className="rounded-xl border border-slate-200 bg-white p-4">
+    <li className="rounded-xl border border-slate-200/80 bg-white p-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Icon className="h-5 w-5 text-slate-500" />

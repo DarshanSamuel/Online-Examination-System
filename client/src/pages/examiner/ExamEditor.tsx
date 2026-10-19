@@ -16,8 +16,8 @@ const DEFAULT_SETTINGS: ExamSettings = {
   allowedLanguages: ['python', 'javascript', 'cpp', 'java'],
   maxWarnings: 3,
   requireFullscreen: true,
-  requireWebcam: true,
-  requireMicrophone: true,
+  requireWebcam: false,
+  requireMicrophone: false,
   snapshotIntervalSec: 60,
   audioThresholdDb: -20,
   gracePeriodSec: 30,
@@ -270,9 +270,9 @@ export function ExamEditor() {
           <div className="mt-4 grid gap-2.5 md:grid-cols-2">
             {(
               [
-                ['requireFullscreen', 'Require fullscreen'],
-                ['requireWebcam', 'Require webcam & snapshots'],
-                ['requireMicrophone', 'Require microphone monitoring'],
+                ['requireFullscreen', 'Require fullscreen (mandatory)'],
+                ['requireWebcam', 'Require webcam & snapshots (optional — check to make mandatory)'],
+                ['requireMicrophone', 'Require microphone monitoring (optional — check to make mandatory)'],
                 ['shuffleOptions', 'Shuffle MCQ options per candidate'],
                 ['showResultsToCandidate', 'Show score to candidates after grading'],
               ] as const

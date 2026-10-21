@@ -33,8 +33,8 @@ export function formatTimeRemaining(closesAtMs: number, nowMs: number): string {
 }
 
 /**
- * Candidate home: shows all exams explicitly assigned to the candidate's email
- * PLUS any published exams so students can immediately see and take published assessments.
+ * Candidate home: shows only exams explicitly assigned/admitted to the candidate's email
+ * that are currently published.
  */
 export function CandidateHome() {
   const { user } = useAuth();
@@ -90,42 +90,34 @@ export function CandidateHome() {
   );
 
   const items = useMemo(() => {
-    if (assignments === null && publishedExams === null) return null;
+    if (assignments === null || publishedExams === null) return null;
     const byExamId = new Map<string, AssignmentDoc & { id: string }>();
 
-    for (const a of assignments ?? []) {
-      byExamId.set(a.examId, a);
-    }
-
-    for (const e of publishedExams ?? []) {
-      if (!byExamId.has(e.id)) {
-        byExamId.set(e.id, {
-          id: `${e.id}_${user?.email?.toLowerCase() ?? ''}`,
-          examId: e.id,
-          examTitle: e.title,
-          candidateEmail: user?.email?.toLowerCase() ?? '',
-          status: 'assigned',
-          attemptCount: 0,
-        });
-      }
+    for (const a of assignments) {
+      if (!examMetaById.has(a.examId)) continue;
+      const meta = examMetaById.get(a.examId);
+      byExamId.set(a.examId, {
+        ...a,
+        examTitle: meta?.title || a.examTitle,
+      });
     }
 
     return Array.from(byExamId.values());
-  }, [assignments, publishedExams, user?.email]);
+  }, [assignments, publishedExams, examMetaById]);
 
   return (
     <div className="min-h-screen bg-transparent">
       <AppHeader />
       <main className="animate-page-enter mx-auto max-w-4xl px-6 py-10">
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">My exams</h1>
-        <p className="mt-1 text-sm text-slate-500">Available and assigned exams for {user?.email}</p>
+        <p className="mt-1 text-sm text-slate-500">Assigned exams for {user?.email}</p>
 
         {error && <p className="mt-6 text-red-600">{error}</p>}
         {items === null && !error && <p className="mt-6 animate-pulse text-slate-400">Loading…</p>}
         {items?.length === 0 && (
           <div className="animate-tab-enter mt-10 flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white/60 p-10 text-center text-slate-500">
             <ClipboardList className="mb-3 h-8 w-8 text-slate-400" />
-            No exams published or assigned yet.
+            No exams registered for your account yet.
           </div>
         )}
 

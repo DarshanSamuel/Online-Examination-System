@@ -65,6 +65,10 @@ export async function startAttempt(user: AuthedUser, examId: string, client: { u
     const exam = examSnap.data() as ExamDoc | undefined;
     if (!exam || exam.status !== 'published') throw new HttpError(404, 'Exam not found', 'EXAM_NOT_FOUND');
 
+    if (!asgSnap.exists) {
+      throw new HttpError(403, 'You are not registered or admitted for this exam', 'NOT_REGISTERED');
+    }
+
     const nowMs = Date.now();
     const opensMs = toMillis(exam.window.opensAt);
     const closesMs = toMillis(exam.window.closesAt);
@@ -150,21 +154,7 @@ export async function startAttempt(user: AuthedUser, examId: string, client: { u
     };
 
     tx.set(subRef, doc);
-    if (asgSnap.exists) {
-      tx.update(asgRef, { status: 'started', candidateUid: user.uid, startedAt, attemptCount } satisfies Partial<AssignmentDoc>);
-    } else {
-      tx.set(asgRef, {
-        examId,
-        examTitle: exam.title,
-        candidateEmail: user.email.toLowerCase(),
-        candidateUid: user.uid,
-        assignedBy: exam.createdBy,
-        assignedAt: startedAt,
-        startedAt,
-        status: 'started',
-        attemptCount,
-      } satisfies AssignmentDoc);
-    }
+    tx.update(asgRef, { status: 'started', candidateUid: user.uid, startedAt, attemptCount } satisfies Partial<AssignmentDoc>);
     return { submissionId: id, resumed: false, startedAt: nowMs, deadlineAt: deadlineMs, serverNow: nowMs };
   });
 }

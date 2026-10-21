@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { doc, getDoc } from 'firebase/firestore';
 import { ArrowLeft, Clock, Loader2, ShieldCheck } from 'lucide-react';
+import { useAuth } from '../auth/AuthProvider';
 import { db } from '../lib/firebase';
 import { api, apiErrorMessage } from '../lib/api';
 import { SystemCheck } from '../components/Lobby/SystemCheck';
@@ -26,6 +27,7 @@ interface ExamInfo {
  */
 export function ExamLobby() {
   const { examId } = useParams<{ examId: string }>();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [exam, setExam] = useState<ExamInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -34,11 +36,32 @@ export function ExamLobby() {
   const [starting, setStarting] = useState(false);
 
   useEffect(() => {
-    if (!examId) return;
-    getDoc(doc(db, 'exams', examId))
-      .then((snap) => (snap.exists() ? setExam(snap.data() as ExamInfo) : setError('Exam not found')))
+    if (!examId || !user?.email) return;
+    const email = user.email.toLowerCase();
+    const asgRef = doc(db, 'assignments', `${examId}_${email}`);
+
+    Promise.all([
+      getDoc(doc(db, 'exams', examId)),
+      getDoc(asgRef),
+    ])
+      .then(([examSnap, asgSnap]) => {
+        if (!examSnap.exists()) {
+          setError('Exam not found');
+          return;
+        }
+        if (!asgSnap.exists()) {
+          setError('You are not registered or admitted for this exam.');
+          return;
+        }
+        const data = examSnap.data() as ExamInfo & { status?: string };
+        if (data.status !== 'published') {
+          setError('This exam is not published.');
+          return;
+        }
+        setExam(data);
+      })
       .catch(() => setError('You do not have access to this exam.'));
-  }, [examId]);
+  }, [examId, user?.email]);
 
   const onReadyChange = useCallback((r: boolean) => setReady(r), []);
 

@@ -14,7 +14,8 @@
     "test": "tsx --test test/grading.test.ts test/plagiarism.test.ts",
     "set-role": "tsx src/scripts/setRole.ts",
     "seed:demo": "tsx src/scripts/seedDemo.ts",
-    "seed:dsa": "tsx src/scripts/seedDsaBank.ts"
+    "seed:dsa": "tsx src/scripts/seedDsaBank.ts",
+    "seed:mpmc": "tsx src/scripts/seedMpmcBank.ts"
   },
   "dependencies": {
     "@types/cors": "^2.8.17",

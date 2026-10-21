@@ -3,11 +3,11 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { collection, doc, onSnapshot, query, where, getDocs } from 'firebase/firestore';
 import { Archive, BarChart3, Copy, Download, Eye, Loader2, Pencil, Rocket, ScanSearch, Trash2, UserPlus, Users } from 'lucide-react';
 import { ExaminerLayout } from '../../components/examiner/ExaminerLayout';
-import { AttemptTrendBadge, AttemptTrendChart, getResolvedAttempts } from '../../components/examiner/AttemptTrendChart';
+import { AttemptTrendBadge, AttemptTrendChart, getResolvedAttempts, type NormalizedAttempt } from '../../components/examiner/AttemptTrendChart';
 import { useAuth } from '../../auth/AuthProvider';
 import { api, apiErrorMessage } from '../../lib/api';
 import { db } from '../../lib/firebase';
-import { assignCandidates, deleteDraftExam, downloadText, listQuestions, normalizeExam, parseEmails, removeAssignment, resultsToCsv, setExamStatus } from '../../lib/examinerData';
+import { asTimestamp, assignCandidates, deleteDraftExam, downloadText, listQuestions, normalizeExam, parseEmails, removeAssignment, resultsToCsv, setExamStatus } from '../../lib/examinerData';
 import type { Assignment, Exam, SimilarityReport, Submission } from '../../types/examiner';
 import { btnDanger, btnGhost, btnPrimary, btnSmall, card, input, statusTone } from '../../components/ui/styles';
 import { cn } from '../../lib/utils';
@@ -201,10 +201,61 @@ function pct(s: Submission) {
   return s.grading.totalScore != null && s.grading.maxScore ? (s.grading.totalScore / s.grading.maxScore) * 100 : null;
 }
 
+export function getTargetAttempt(s: Submission, mode: 'recent' | 'score' | 'warnings'): NormalizedAttempt {
+  const attempts = getResolvedAttempts(s);
+  if (attempts.length === 0) {
+    return {
+      attemptNumber: s.attemptCount ?? 1,
+      status: s.status,
+      totalScore: s.grading.totalScore,
+      maxScore: s.grading.maxScore,
+      pct: pct(s),
+      warningCount: s.proctoring.warningCount,
+      submittedAtMs: s.timing.submittedAt ? asTimestamp(s.timing.submittedAt).toMillis() : null,
+      startedAtMs: s.timing.startedAt ? asTimestamp(s.timing.startedAt).toMillis() : null,
+      submitReason: s.submitReason ?? null,
+    };
+  }
+
+  if (mode === 'score') {
+    let best = attempts[0]!;
+    for (const a of attempts) {
+      const bestPct = best.pct ?? -1;
+      const curPct = a.pct ?? -1;
+      if (curPct > bestPct) {
+        best = a;
+      } else if (curPct === bestPct) {
+        if ((a.totalScore ?? -1) > (best.totalScore ?? -1)) {
+          best = a;
+        } else if ((a.totalScore ?? -1) === (best.totalScore ?? -1) && a.attemptNumber > best.attemptNumber) {
+          best = a;
+        }
+      }
+    }
+    return best;
+  }
+
+  if (mode === 'warnings') {
+    let maxWarn = attempts[0]!;
+    for (const a of attempts) {
+      if (a.warningCount > maxWarn.warningCount) {
+        maxWarn = a;
+      } else if (a.warningCount === maxWarn.warningCount && a.attemptNumber > maxWarn.attemptNumber) {
+        maxWarn = a;
+      }
+    }
+    return maxWarn;
+  }
+
+  // mode === 'recent'
+  return attempts[attempts.length - 1]!;
+}
+
 function ResultsTab({ exam }: { exam: Exam }) {
   const [subs, setSubs] = useState<Submission[] | null>(null);
   const [sort, setSort] = useState<'recent' | 'score' | 'warnings'>('recent');
   const [selectedSubId, setSelectedSubId] = useState<string | null>(null);
+  const [selectedAttemptBySub, setSelectedAttemptBySub] = useState<Record<string, number>>({});
 
   useEffect(
     () => onSnapshot(query(collection(db, 'submissions'), where('examId', '==', exam.id)), (s) => setSubs(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Submission, 'id'>) })))),
@@ -213,9 +264,31 @@ function ResultsTab({ exam }: { exam: Exam }) {
 
   const sorted = useMemo(() => {
     const list = [...(subs ?? [])];
-    if (sort === 'score') list.sort((a, b) => (pct(b) ?? -1) - (pct(a) ?? -1));
-    else if (sort === 'warnings') list.sort((a, b) => b.proctoring.warningCount - a.proctoring.warningCount);
-    else list.sort((a, b) => b.timing.startedAt.toMillis() - a.timing.startedAt.toMillis());
+    if (sort === 'score') {
+      list.sort((a, b) => {
+        const targetA = getTargetAttempt(a, 'score');
+        const targetB = getTargetAttempt(b, 'score');
+        const scoreDiff = (targetB.pct ?? -1) - (targetA.pct ?? -1);
+        if (scoreDiff !== 0) return scoreDiff;
+        return (targetB.totalScore ?? -1) - (targetA.totalScore ?? -1);
+      });
+    } else if (sort === 'warnings') {
+      list.sort((a, b) => {
+        const targetA = getTargetAttempt(a, 'warnings');
+        const targetB = getTargetAttempt(b, 'warnings');
+        const warnDiff = targetB.warningCount - targetA.warningCount;
+        if (warnDiff !== 0) return warnDiff;
+        return (targetB.pct ?? -1) - (targetA.pct ?? -1);
+      });
+    } else {
+      list.sort((a, b) => {
+        const targetA = getTargetAttempt(a, 'recent');
+        const targetB = getTargetAttempt(b, 'recent');
+        const timeA = targetA.startedAtMs ?? a.timing.startedAt.toMillis();
+        const timeB = targetB.startedAtMs ?? b.timing.startedAt.toMillis();
+        return timeB - timeA;
+      });
+    }
     return list;
   }, [subs, sort]);
 
@@ -224,8 +297,17 @@ function ResultsTab({ exam }: { exam: Exam }) {
     return sorted.find((s) => s.id === selectedSubId) ?? sorted[0]!;
   }, [sorted, selectedSubId]);
 
+  const activeTargetAttempt = useMemo(() => {
+    return activeSub ? getTargetAttempt(activeSub, sort) : null;
+  }, [activeSub, sort]);
+
+  const selectedAttemptForActive = activeSub
+    ? (selectedAttemptBySub[activeSub.id] ?? activeTargetAttempt?.attemptNumber)
+    : undefined;
+
   const stats = useMemo(() => {
-    const scored = (subs ?? []).map(pct).filter((v): v is number => v != null);
+    const targets = (subs ?? []).map((s) => getTargetAttempt(s, sort));
+    const scored = targets.map((t) => t.pct).filter((v): v is number => v != null);
     const buckets = Array.from({ length: 10 }, () => 0);
     scored.forEach((v) => (buckets[Math.min(9, Math.floor(v / 10))]! += 1));
     const totalAttemptsAcrossAll = (subs ?? []).reduce((acc, s) => acc + (s.attemptCount ?? 1), 0);
@@ -236,10 +318,10 @@ function ResultsTab({ exam }: { exam: Exam }) {
       avg: scored.length ? scored.reduce((a, b) => a + b, 0) / scored.length : null,
       max: scored.length ? Math.max(...scored) : null,
       min: scored.length ? Math.min(...scored) : null,
-      flagged: (subs ?? []).filter((s) => s.proctoring.warningCount > 0).length,
+      flagged: targets.filter((t) => t.warningCount > 0).length,
       buckets,
     };
-  }, [subs]);
+  }, [subs, sort]);
 
   if (subs === null) return <p className="animate-pulse text-slate-400">Loading…</p>;
 
@@ -291,7 +373,11 @@ function ResultsTab({ exam }: { exam: Exam }) {
                   <button
                     key={c.id}
                     type="button"
-                    onClick={() => setSelectedSubId(c.id)}
+                    onClick={() => {
+                      setSelectedSubId(c.id);
+                      const t = getTargetAttempt(c, sort);
+                      setSelectedAttemptBySub((prev) => ({ ...prev, [c.id]: t.attemptNumber }));
+                    }}
                     className={cn(
                       'cursor-pointer rounded-xl px-3 py-1.5 text-xs font-medium transition-all duration-200 active:scale-95',
                       activeSub.id === c.id
@@ -305,7 +391,14 @@ function ResultsTab({ exam }: { exam: Exam }) {
               })}
             </div>
           )}
-          <AttemptTrendChart attempts={getResolvedAttempts(activeSub)} candidateName={activeSub.candidateName} />
+          <AttemptTrendChart
+            attempts={getResolvedAttempts(activeSub)}
+            candidateName={activeSub.candidateName}
+            selectedAttemptNumber={selectedAttemptForActive}
+            onSelectAttempt={(num) => {
+              setSelectedAttemptBySub((prev) => ({ ...prev, [activeSub.id]: num }));
+            }}
+          />
         </div>
       )}
 
@@ -322,7 +415,10 @@ function ResultsTab({ exam }: { exam: Exam }) {
               <button
                 key={k}
                 type="button"
-                onClick={() => setSort(k)}
+                onClick={() => {
+                  setSort(k);
+                  setSelectedAttemptBySub({});
+                }}
                 className={cn(
                   'cursor-pointer rounded-lg px-3 py-1 text-xs font-medium transition-all duration-200 active:scale-95',
                   sort === k ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900',
@@ -340,20 +436,37 @@ function ResultsTab({ exam }: { exam: Exam }) {
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50/80 text-xs uppercase tracking-wider text-slate-500">
               <tr>
-                {['Candidate', 'Status', 'Latest Score', 'All Attempts & Trend', 'Warnings', 'Tabs', 'Clipboard', 'Started', ''].map((h) => (
-                  <th key={h} className="px-4 py-3 font-semibold">{h}</th>
-                ))}
+                <th className="px-4 py-3 font-semibold">Candidate</th>
+                <th className="px-4 py-3 font-semibold">Status</th>
+                <th className="px-4 py-3 font-semibold">
+                  {sort === 'score' ? 'Highest Score' : sort === 'warnings' ? 'Score (Flagged)' : 'Most Recent Score'}
+                </th>
+                <th className="px-4 py-3 font-semibold">All Attempts & Trend</th>
+                <th className="px-4 py-3 font-semibold">
+                  {sort === 'warnings' ? 'Peak Warnings' : 'Warnings'}
+                </th>
+                <th className="px-4 py-3 font-semibold">Tabs</th>
+                <th className="px-4 py-3 font-semibold">Clipboard</th>
+                <th className="px-4 py-3 font-semibold">Started</th>
+                <th className="px-4 py-3 font-semibold"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {sorted.map((s) => {
-                const p = pct(s);
-                const pasted = Object.values(s.keystrokeStats ?? {}).reduce((a, k) => a + k.pastedChars, 0);
                 const attempts = getResolvedAttempts(s);
+                const target = getTargetAttempt(s, sort);
+                const pasted = Object.values(s.keystrokeStats ?? {}).reduce((a, k) => a + k.pastedChars, 0);
+                const startedText = target.startedAtMs
+                  ? new Date(target.startedAtMs).toLocaleString()
+                  : s.timing.startedAt.toDate().toLocaleString();
+
                 return (
                   <tr
                     key={s.id}
-                    onClick={() => setSelectedSubId(s.id)}
+                    onClick={() => {
+                      setSelectedSubId(s.id);
+                      setSelectedAttemptBySub((prev) => ({ ...prev, [s.id]: target.attemptNumber }));
+                    }}
                     className={cn(
                       'cursor-pointer transition-colors duration-150 hover:bg-slate-50/80',
                       activeSub?.id === s.id && 'bg-primary-50/30',
@@ -364,19 +477,81 @@ function ResultsTab({ exam }: { exam: Exam }) {
                       <p className="text-xs text-slate-500">{s.candidateEmail}</p>
                     </td>
                     <td className="px-4 py-3.5">
-                      <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-medium', statusTone[s.status])}>{s.status.replace('_', ' ')}</span>
-                      {s.submitReason && s.submitReason !== 'manual' && <p className="mt-0.5 text-[11px] text-slate-500">{s.submitReason.replace('_', ' ')}</p>}
+                      <div className="flex flex-col gap-0.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-medium', statusTone[target.status] ?? statusTone[s.status])}>
+                            {target.status.replace('_', ' ')}
+                          </span>
+                          {attempts.length > 1 && (
+                            <span className="rounded-md bg-slate-100 px-1.5 py-0.2 font-mono text-[10px] font-semibold text-slate-600 ring-1 ring-inset ring-slate-200">
+                              #{target.attemptNumber}
+                            </span>
+                          )}
+                        </div>
+                        {target.submitReason && target.submitReason !== 'manual' && (
+                          <p className="text-[11px] text-slate-500">{target.submitReason.replace('_', ' ')}</p>
+                        )}
+                      </div>
                     </td>
-                    <td className="px-4 py-3.5 font-mono font-medium">{s.grading.totalScore != null ? `${s.grading.totalScore}/${s.grading.maxScore} (${p?.toFixed(0)}%)` : '—'}</td>
+                    <td className="px-4 py-3.5 font-mono font-medium">
+                      {target.totalScore != null && target.maxScore != null ? (
+                        <div className="flex flex-col">
+                          <div className="flex items-center gap-1.5">
+                            <span>{target.totalScore}/{target.maxScore}</span>
+                            <span className="text-xs text-slate-500">({target.pct?.toFixed(0)}%)</span>
+                            {attempts.length > 1 && (
+                              <span
+                                className={cn(
+                                  'rounded-md px-1.5 py-0.2 font-mono text-[10px] font-bold ring-1 ring-inset',
+                                  sort === 'score'
+                                    ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+                                    : sort === 'warnings'
+                                    ? 'bg-amber-50 text-amber-700 ring-amber-200'
+                                    : 'bg-slate-100 text-slate-600 ring-slate-200',
+                                )}
+                                title={`Viewing Attempt #${target.attemptNumber}`}
+                              >
+                                #{target.attemptNumber}
+                              </span>
+                            )}
+                          </div>
+                          {sort === 'score' && attempts.length > 1 && (
+                            <span className="text-[10px] font-sans text-emerald-600">
+                              {target.attemptNumber === attempts[attempts.length - 1]?.attemptNumber ? 'Latest is best' : `Best of ${attempts.length} attempts`}
+                            </span>
+                          )}
+                          {sort === 'warnings' && attempts.length > 1 && (
+                            <span className="text-[10px] font-sans text-red-600">
+                              Peak warnings attempt
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3.5">
                       <AttemptTrendBadge attempts={attempts} />
                     </td>
-                    <td className={cn('px-4 py-3.5 font-semibold', s.proctoring.warningCount ? 'text-red-600' : 'text-slate-400')}>{s.proctoring.warningCount}</td>
+                    <td className={cn('px-4 py-3.5 font-semibold', target.warningCount ? 'text-red-600' : 'text-slate-400')}>
+                      <div className="flex items-center gap-1.5">
+                        <span>{target.warningCount}</span>
+                        {sort === 'warnings' && attempts.length > 1 && (
+                          <span className="rounded bg-red-50 px-1 py-0.2 font-mono text-[10px] font-semibold text-red-700 ring-1 ring-inset ring-red-200">
+                            #{target.attemptNumber}
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-4 py-3.5">{s.proctoring.tabSwitches}</td>
-                    <td className={cn('px-4 py-3.5', s.proctoring.clipboardAttempts || pasted ? 'font-medium text-amber-700' : '')}>{s.proctoring.clipboardAttempts}{pasted ? ` · ${pasted}ch pasted` : ''}</td>
-                    <td className="px-4 py-3.5 text-xs text-slate-500">{s.timing.startedAt.toDate().toLocaleString()}</td>
+                    <td className={cn('px-4 py-3.5', s.proctoring.clipboardAttempts || pasted ? 'font-medium text-amber-700' : '')}>
+                      {s.proctoring.clipboardAttempts}{pasted ? ` · ${pasted}ch pasted` : ''}
+                    </td>
+                    <td className="px-4 py-3.5 text-xs text-slate-500">{startedText}</td>
                     <td className="px-4 py-3.5 text-right" onClick={(e) => e.stopPropagation()}>
-                      <Link to={`/examiner/submissions/${s.id}`} className={btnSmall}><Eye className="h-3.5 w-3.5" /> Review</Link>
+                      <Link to={`/examiner/submissions/${s.id}`} className={btnSmall}>
+                        <Eye className="h-3.5 w-3.5" /> Review
+                      </Link>
                     </td>
                   </tr>
                 );

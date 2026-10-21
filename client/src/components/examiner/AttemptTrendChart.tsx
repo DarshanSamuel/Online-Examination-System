@@ -1,7 +1,8 @@
-import { Minus, TrendingDown, TrendingUp } from 'lucide-react';
+import { useState } from 'react';
+import { Check, Minus, TrendingDown, TrendingUp } from 'lucide-react';
 import { asTimestamp } from '../../lib/examinerData';
 import type { Submission } from '../../types/examiner';
-import { card } from '../ui/styles';
+import { card, statusTone } from '../ui/styles';
 import { cn } from '../../lib/utils';
 
 export interface NormalizedAttempt {
@@ -12,6 +13,9 @@ export interface NormalizedAttempt {
   pct: number | null;
   warningCount: number;
   submittedAtMs: number | null;
+  startedAtMs?: number | null;
+  submitReason?: string | null;
+  perQuestion?: Record<string, { score: number; maxScore: number; status: string }>;
 }
 
 /**
@@ -31,6 +35,9 @@ export function getResolvedAttempts(sub: Submission): NormalizedAttempt[] {
       pct,
       warningCount: h.warningCount ?? 0,
       submittedAtMs: h.submittedAt ? asTimestamp(h.submittedAt).toMillis() : null,
+      startedAtMs: h.startedAt ? asTimestamp(h.startedAt).toMillis() : null,
+      submitReason: h.submitReason ?? null,
+      perQuestion: h.perQuestion,
     });
   }
 
@@ -49,6 +56,9 @@ export function getResolvedAttempts(sub: Submission): NormalizedAttempt[] {
     pct: currentPct,
     warningCount: sub.proctoring.warningCount,
     submittedAtMs: sub.timing.submittedAt ? asTimestamp(sub.timing.submittedAt).toMillis() : null,
+    startedAtMs: sub.timing.startedAt ? asTimestamp(sub.timing.startedAt).toMillis() : null,
+    submitReason: sub.submitReason ?? null,
+    perQuestion: sub.grading.perQuestion,
   });
 
   return Array.from(byNum.values()).sort((a, b) => a.attemptNumber - b.attemptNumber);
@@ -135,17 +145,31 @@ export function AttemptTrendBadge({ attempts }: { attempts: NormalizedAttempt[] 
 
 /**
  * Full SVG Trajectory & Improvement / Depreciation Graph across all attempts.
+ * Supports interactive attempt selection to view individual attempt metrics.
  */
 export function AttemptTrendChart({
   attempts,
   candidateName,
+  selectedAttemptNumber,
+  onSelectAttempt,
   className,
 }: {
   attempts: NormalizedAttempt[];
   candidateName?: string;
+  selectedAttemptNumber?: number;
+  onSelectAttempt?: (attemptNumber: number) => void;
   className?: string;
 }) {
   const { scored, first, latest, best, netDeltaPct, netDeltaMarks, direction } = computeTrendSummary(attempts);
+
+  const defaultNum = attempts.length > 0 ? attempts[attempts.length - 1]!.attemptNumber : 1;
+  const [internalSelected, setInternalSelected] = useState<number>(defaultNum);
+  const activeNum = selectedAttemptNumber ?? internalSelected;
+
+  const handleSelect = (num: number) => {
+    setInternalSelected(num);
+    onSelectAttempt?.(num);
+  };
 
   // SVG coordinate system
   const width = 680;
@@ -171,8 +195,19 @@ export function AttemptTrendChart({
       a.totalScore != null && prev?.totalScore != null
         ? Math.round((a.totalScore - prev.totalScore) * 100) / 100
         : null;
-    return { ...a, x, y, clampedPct, stepDeltaPct, stepDeltaMarks };
+
+    let durationStr: string | null = null;
+    if (a.startedAtMs && a.submittedAtMs && a.submittedAtMs > a.startedAtMs) {
+      const diffSec = Math.floor((a.submittedAtMs - a.startedAtMs) / 1000);
+      const mins = Math.floor(diffSec / 60);
+      const secs = diffSec % 60;
+      durationStr = mins === 0 ? `${secs}s` : secs === 0 ? `${mins}m` : `${mins}m ${secs}s`;
+    }
+
+    return { ...a, x, y, clampedPct, stepDeltaPct, stepDeltaMarks, durationStr };
   });
+
+  const selectedPoint = points.find((p) => p.attemptNumber === activeNum) ?? points[points.length - 1];
 
   return (
     <div className={cn(card, 'p-6', className)}>
@@ -182,7 +217,7 @@ export function AttemptTrendChart({
             {candidateName ? `${candidateName} — Attempt Progression & Trend` : 'Attempt Progression & Improvement / Depreciation Graph'}
           </h3>
           <p className="mt-0.5 text-xs text-slate-500">
-            Marks and percentage trajectory across all {attempts.length} {attempts.length === 1 ? 'attempt' : 'attempts'} (green = improvement, red = depreciation).
+            Marks and percentage trajectory across all {attempts.length} {attempts.length === 1 ? 'attempt' : 'attempts'}. Click any attempt or data point to inspect its metrics.
           </p>
         </div>
 
@@ -206,7 +241,140 @@ export function AttemptTrendChart({
         )}
       </div>
 
-      {/* Summary metrics */}
+      {/* Interactive Attempt Selection Pills */}
+      {attempts.length > 0 && (
+        <div className="mt-4 flex flex-wrap items-center gap-2 border-y border-slate-100 py-3">
+          <span className="mr-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
+            Select Attempt:
+          </span>
+          {points.map((p) => {
+            const isSelected = p.attemptNumber === activeNum;
+            return (
+              <button
+                key={p.attemptNumber}
+                type="button"
+                onClick={() => handleSelect(p.attemptNumber)}
+                className={cn(
+                  'cursor-pointer inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-all duration-200 active:scale-95',
+                  isSelected
+                    ? 'bg-primary-600 text-white shadow-xs font-semibold ring-2 ring-primary-500/20'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80',
+                )}
+              >
+                <span>Attempt #{p.attemptNumber}</span>
+                {p.totalScore != null && p.maxScore != null ? (
+                  <span
+                    className={cn(
+                      'rounded px-1.5 py-0.2 font-mono text-[10px] font-semibold',
+                      isSelected ? 'bg-white/20 text-white' : 'bg-white text-slate-700 shadow-2xs',
+                    )}
+                  >
+                    {p.totalScore}/{p.maxScore}
+                  </span>
+                ) : (
+                  <span className="italic opacity-80 text-[10px]">({p.status})</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Selected Attempt Detailed Metrics Card */}
+      {selectedPoint && (
+        <div className="mt-4 rounded-xl border border-primary-200/90 bg-gradient-to-br from-primary-50/50 via-white to-slate-50/60 p-4 shadow-2xs animate-tab-enter">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-primary-100/70 pb-3">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary-600 font-mono text-xs font-bold text-white shadow-xs">
+                #{selectedPoint.attemptNumber}
+              </span>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-sm font-bold text-slate-900">
+                    Attempt #{selectedPoint.attemptNumber} Metrics & Performance
+                  </h4>
+                  {selectedPoint.attemptNumber === latest?.attemptNumber && (
+                    <span className="rounded-md bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700 ring-1 ring-inset ring-blue-200">
+                      Latest Attempt
+                    </span>
+                  )}
+                  {selectedPoint.attemptNumber === best?.attemptNumber && (
+                    <span className="rounded-md bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-200">
+                      Best Score
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  {selectedPoint.submittedAtMs
+                    ? `Submitted on ${new Date(selectedPoint.submittedAtMs).toLocaleString()}`
+                    : 'Status: ' + selectedPoint.status.replace('_', ' ')}
+                </p>
+              </div>
+            </div>
+            <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize', statusTone[selectedPoint.status] ?? 'bg-slate-100 text-slate-700')}>
+              {selectedPoint.status.replace('_', ' ')}
+            </span>
+          </div>
+
+          <div className="mt-3.5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="rounded-xl border border-slate-200/80 bg-white p-3 shadow-2xs">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Score & Percentage</p>
+              <p className="mt-1 font-mono text-lg font-bold text-slate-900">
+                {selectedPoint.totalScore != null && selectedPoint.maxScore != null
+                  ? `${selectedPoint.totalScore} / ${selectedPoint.maxScore}`
+                  : '—'}
+              </p>
+              <p className="text-xs font-semibold text-primary-600">
+                {selectedPoint.pct != null ? `${selectedPoint.pct.toFixed(1)}%` : 'Ungraded'}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-slate-200/80 bg-white p-3 shadow-2xs">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Change vs Previous</p>
+              <div className="mt-1 font-mono text-sm font-bold">
+                {selectedPoint.stepDeltaPct == null ? (
+                  <span className="text-slate-400 font-normal">Baseline (Attempt #1)</span>
+                ) : selectedPoint.stepDeltaPct > 0.05 ? (
+                  <span className="flex items-center gap-1 text-emerald-600 font-bold">
+                    <TrendingUp className="h-4 w-4" /> +{selectedPoint.stepDeltaPct.toFixed(1)}% ({selectedPoint.stepDeltaMarks != null && selectedPoint.stepDeltaMarks >= 0 ? `+${selectedPoint.stepDeltaMarks}` : selectedPoint.stepDeltaMarks} pts)
+                  </span>
+                ) : selectedPoint.stepDeltaPct < -0.05 ? (
+                  <span className="flex items-center gap-1 text-red-600 font-bold">
+                    <TrendingDown className="h-4 w-4" /> {selectedPoint.stepDeltaPct.toFixed(1)}% ({selectedPoint.stepDeltaMarks} pts)
+                  </span>
+                ) : (
+                  <span className="text-slate-600 font-medium">0.0% (No change)</span>
+                )}
+              </div>
+              <p className="mt-0.5 text-[11px] text-slate-400">
+                {selectedPoint.attemptNumber > 1 ? `vs Attempt #${selectedPoint.attemptNumber - 1}` : 'Initial baseline'}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-slate-200/80 bg-white p-3 shadow-2xs">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Proctoring Flags</p>
+              <p className={cn('mt-1 text-lg font-bold', selectedPoint.warningCount > 0 ? 'text-amber-600' : 'text-slate-900')}>
+                {selectedPoint.warningCount} {selectedPoint.warningCount === 1 ? 'warning' : 'warnings'}
+              </p>
+              <p className="text-[11px] text-slate-400">
+                {selectedPoint.warningCount === 0 ? 'Zero warnings recorded' : 'Integrity warnings logged'}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-slate-200/80 bg-white p-3 shadow-2xs">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Reason & Duration</p>
+              <p className="mt-1 truncate text-sm font-semibold capitalize text-slate-800" title={selectedPoint.submitReason ?? 'normal'}>
+                {selectedPoint.submitReason ? selectedPoint.submitReason.replace(/_/g, ' ') : 'Normal submit'}
+              </p>
+              <p className="text-[11px] text-slate-400">
+                {selectedPoint.durationStr ?? (selectedPoint.submittedAtMs ? 'Submitted' : 'In progress')}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Summary metrics cards */}
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-3">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Total Attempts</p>
@@ -266,8 +434,10 @@ export function AttemptTrendChart({
             {points.map((p) => {
               const barW = Math.min(44, Math.max(20, plotW / Math.max(2, points.length * 2.2)));
               const barH = Math.max(2, padTop + plotH - p.y);
-              const fill =
-                p.stepDeltaPct == null
+              const isSelected = p.attemptNumber === activeNum;
+              const fill = isSelected
+                ? 'rgba(99, 102, 241, 0.35)'
+                : p.stepDeltaPct == null
                   ? 'rgba(99, 102, 241, 0.16)'
                   : p.stepDeltaPct > 0.05
                     ? 'rgba(16, 185, 129, 0.18)'
@@ -283,6 +453,8 @@ export function AttemptTrendChart({
                   height={barH}
                   rx={6}
                   fill={fill}
+                  onClick={() => handleSelect(p.attemptNumber)}
+                  className="cursor-pointer transition-all hover:opacity-80"
                 />
               );
             })}
@@ -314,6 +486,7 @@ export function AttemptTrendChart({
 
             {/* Data nodes & labels */}
             {points.map((p) => {
+              const isSelected = p.attemptNumber === activeNum;
               const dotColor =
                 p.stepDeltaPct == null
                   ? '#6366f1'
@@ -324,14 +497,41 @@ export function AttemptTrendChart({
                       : '#6366f1';
 
               return (
-                <g key={`pt-${p.attemptNumber}`}>
-                  <circle cx={p.x} cy={p.y} r={6} fill={dotColor} stroke="#ffffff" strokeWidth={2} />
+                <g
+                  key={`pt-${p.attemptNumber}`}
+                  onClick={() => handleSelect(p.attemptNumber)}
+                  className="cursor-pointer group"
+                >
+                  {/* Active selection pulsing halo */}
+                  {isSelected && (
+                    <circle
+                      cx={p.x}
+                      cy={p.y}
+                      r={12}
+                      fill="none"
+                      stroke="#4f46e5"
+                      strokeWidth={2}
+                      strokeDasharray="3 3"
+                    />
+                  )}
+                  <circle
+                    cx={p.x}
+                    cy={p.y}
+                    r={isSelected ? 8 : 6}
+                    fill={dotColor}
+                    stroke="#ffffff"
+                    strokeWidth={isSelected ? 3 : 2}
+                    className="transition-transform duration-150 group-hover:scale-125"
+                  />
                   {/* Score label above node */}
                   <text
                     x={p.x}
                     y={Math.max(14, p.y - 12)}
                     textAnchor="middle"
-                    className="fill-slate-800 font-mono text-[11px] font-bold"
+                    className={cn(
+                      'font-mono text-[11px] font-bold',
+                      isSelected ? 'fill-primary-700 font-extrabold' : 'fill-slate-800',
+                    )}
                   >
                     {p.totalScore != null && p.maxScore != null
                       ? `${p.totalScore}/${p.maxScore} (${p.pct?.toFixed(0)}%)`
@@ -354,7 +554,10 @@ export function AttemptTrendChart({
                     x={p.x}
                     y={height - 14}
                     textAnchor="middle"
-                    className="fill-slate-600 font-sans text-[11px] font-semibold"
+                    className={cn(
+                      'font-sans text-[11px] font-semibold',
+                      isSelected ? 'fill-primary-700 font-bold' : 'fill-slate-600',
+                    )}
                   >
                     Attempt #{p.attemptNumber}
                   </text>
@@ -379,36 +582,64 @@ export function AttemptTrendChart({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {points.map((p) => (
-              <tr key={p.attemptNumber} className="hover:bg-slate-50/60">
-                <td className="px-4 py-2.5 font-semibold text-slate-900">Attempt #{p.attemptNumber}</td>
-                <td className="px-4 py-2.5 font-mono font-semibold text-slate-800">
-                  {p.totalScore != null && p.maxScore != null ? `${p.totalScore} / ${p.maxScore}` : '—'}
-                </td>
-                <td className="px-4 py-2.5 font-mono">
-                  {p.pct != null ? `${p.pct.toFixed(1)}%` : p.status.replace('_', ' ')}
-                </td>
-                <td className="px-4 py-2.5 font-mono font-semibold">
-                  {p.stepDeltaPct == null ? (
-                    <span className="text-slate-400">Baseline</span>
-                  ) : p.stepDeltaPct > 0.05 ? (
-                    <span className="text-emerald-600">
-                      ▲ +{p.stepDeltaMarks} pts (+{p.stepDeltaPct.toFixed(1)}%)
-                    </span>
-                  ) : p.stepDeltaPct < -0.05 ? (
-                    <span className="text-red-600">
-                      ▼ {p.stepDeltaMarks} pts ({p.stepDeltaPct.toFixed(1)}%)
-                    </span>
-                  ) : (
-                    <span className="text-slate-500">━ 0 pts (0.0%)</span>
+            {points.map((p) => {
+              const isSelected = p.attemptNumber === activeNum;
+              return (
+                <tr
+                  key={p.attemptNumber}
+                  onClick={() => handleSelect(p.attemptNumber)}
+                  className={cn(
+                    'cursor-pointer transition-colors duration-150',
+                    isSelected
+                      ? 'bg-primary-50/70 font-semibold ring-1 ring-inset ring-primary-300 text-primary-950'
+                      : 'hover:bg-slate-50/80',
                   )}
-                </td>
-                <td className="px-4 py-2.5">{p.warningCount}</td>
-                <td className="px-4 py-2.5 text-slate-500">
-                  {p.submittedAtMs ? new Date(p.submittedAtMs).toLocaleString() : 'In progress'}
-                </td>
-              </tr>
-            ))}
+                >
+                  <td className="px-4 py-2.5 font-semibold text-slate-900">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="selectedAttempt"
+                        checked={isSelected}
+                        onChange={() => handleSelect(p.attemptNumber)}
+                        className="h-3.5 w-3.5 accent-primary-600 cursor-pointer"
+                      />
+                      <span>Attempt #{p.attemptNumber}</span>
+                      {isSelected && (
+                        <span className="rounded bg-primary-100 px-1.5 py-0.2 text-[10px] font-semibold text-primary-700">
+                          Viewing
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-4 py-2.5 font-mono font-semibold text-slate-800">
+                    {p.totalScore != null && p.maxScore != null ? `${p.totalScore} / ${p.maxScore}` : '—'}
+                  </td>
+                  <td className="px-4 py-2.5 font-mono">
+                    {p.pct != null ? `${p.pct.toFixed(1)}%` : p.status.replace('_', ' ')}
+                  </td>
+                  <td className="px-4 py-2.5 font-mono font-semibold">
+                    {p.stepDeltaPct == null ? (
+                      <span className="text-slate-400">Baseline</span>
+                    ) : p.stepDeltaPct > 0.05 ? (
+                      <span className="text-emerald-600">
+                        ▲ +{p.stepDeltaMarks} pts (+{p.stepDeltaPct.toFixed(1)}%)
+                      </span>
+                    ) : p.stepDeltaPct < -0.05 ? (
+                      <span className="text-red-600">
+                        ▼ {p.stepDeltaMarks} pts ({p.stepDeltaPct.toFixed(1)}%)
+                      </span>
+                    ) : (
+                      <span className="text-slate-500">━ 0 pts (0.0%)</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2.5">{p.warningCount}</td>
+                  <td className="px-4 py-2.5 text-slate-500">
+                    {p.submittedAtMs ? new Date(p.submittedAtMs).toLocaleString() : 'In progress'}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

@@ -28,6 +28,7 @@ interface Result {
     totalScore: number | null;
     maxScore: number | null;
     warningCount: number;
+    perQuestion?: Record<string, { score: number; maxScore: number; status: string }>;
   }[];
   questions?: { questionId: string; type: string; score: number; maxScore: number; status: string }[];
 }
@@ -38,6 +39,7 @@ const TONE: Record<string, string> = { correct: 'text-emerald-600', partial: 'te
 export function ResultPage() {
   const { examId } = useParams<{ examId: string }>();
   const [data, setData] = useState<Result | null>(null);
+  const [selectedAttemptNumber, setSelectedAttemptNumber] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -76,7 +78,23 @@ export function ResultPage() {
     pct: h.totalScore != null && h.maxScore ? (h.totalScore / h.maxScore) * 100 : null,
     warningCount: h.warningCount,
     submittedAtMs: h.submittedAt,
+    startedAtMs: h.startedAt,
+    submitReason: h.submitReason,
+    perQuestion: h.perQuestion,
   }));
+
+  const activeNum = selectedAttemptNumber ?? used;
+  const activeAttempt = normalizedAttempts.find((a) => a.attemptNumber === activeNum) ?? normalizedAttempts[normalizedAttempts.length - 1];
+  const activeScore = activeAttempt?.totalScore ?? data.totalScore;
+  const activeMax = activeAttempt?.maxScore ?? data.maxScore;
+  const activePct = activeScore != null && activeMax ? Math.round((activeScore / activeMax) * 100) : pct;
+
+  const displayedQuestions = (activeAttempt?.perQuestion && data.questions)
+    ? data.questions.map((q) => {
+        const grade = activeAttempt.perQuestion?.[q.questionId];
+        return grade ? { ...q, score: grade.score, maxScore: grade.maxScore, status: grade.status } : q;
+      })
+    : data.questions;
 
   return (
     <div className="min-h-screen bg-transparent">
@@ -103,10 +121,26 @@ export function ResultPage() {
           )}
           {data.released && (
             <div className="animate-tab-enter">
-              <p className="mt-4 text-5xl font-bold tracking-tight text-slate-900">{pct}%</p>
-              <p className="mt-1 text-slate-500">{data.totalScore} of {data.maxScore} points (Attempt #{used})</p>
+              <p className="mt-4 text-5xl font-bold tracking-tight text-slate-900">{activePct}%</p>
+              <p className="mt-1 text-slate-500">
+                {activeScore} of {activeMax} points (Attempt #{activeNum})
+              </p>
+
+              {activeNum !== used && (
+                <div className="mt-2.5 inline-flex items-center gap-2 rounded-full bg-primary-50 px-3 py-1 text-xs font-medium text-primary-700 ring-1 ring-inset ring-primary-200">
+                  <span>Viewing Attempt #{activeNum} of {used}</span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedAttemptNumber(used)}
+                    className="cursor-pointer font-semibold underline hover:text-primary-900"
+                  >
+                    View latest attempt (#{used})
+                  </button>
+                </div>
+              )}
+
               <ul className="mt-6 divide-y divide-slate-100 text-left text-sm">
-                {data.questions?.map((q, i) => (
+                {displayedQuestions?.map((q, i) => (
                   <li key={q.questionId} className="flex items-center justify-between py-3">
                     <span className="flex items-center gap-2 font-medium text-slate-800">
                       {q.status === 'correct' ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : q.status === 'incorrect' || q.status === 'error' ? <XCircle className="h-4 w-4 text-red-600" /> : <span className="h-4 w-4" />}
@@ -154,7 +188,11 @@ export function ResultPage() {
         </div>
 
         {data.released && normalizedAttempts.length > 0 && (
-          <AttemptTrendChart attempts={normalizedAttempts} />
+          <AttemptTrendChart
+            attempts={normalizedAttempts}
+            selectedAttemptNumber={activeNum}
+            onSelectAttempt={setSelectedAttemptNumber}
+          />
         )}
       </main>
     </div>

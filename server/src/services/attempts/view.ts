@@ -156,6 +156,14 @@ export async function getAttemptResult(user: AuthedUser, examId: string) {
       totalScore: h.totalScore,
       maxScore: h.maxScore,
       warningCount: h.warningCount,
+      perQuestion: h.perQuestion
+        ? Object.fromEntries(
+            Object.entries(h.perQuestion).map(([qid, qg]) => [
+              qid,
+              { score: qg.score, maxScore: qg.maxScore, status: qg.status },
+            ]),
+          )
+        : null,
     })),
     questions: sub.questionMap
       .slice()

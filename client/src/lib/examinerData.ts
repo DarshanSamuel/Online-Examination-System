@@ -83,7 +83,7 @@ export async function loadQuestion(id: string): Promise<{ question: Question; ke
  * Written sequentially: the secrets rule calls get() on the parent question, which must already
  * exist. Updates bump `version` by exactly one (enforced by the Firestore rules).
  */
-export async function saveQuestion(uid: string, input: QuestionInput, key: AnswerKey, existingId?: string): Promise<string> {
+export async function saveQuestion(uid: string, input: QuestionInput, key: AnswerKey, existingId?: string, bankId = 'default'): Promise<string> {
   const now = Timestamp.now();
   if (existingId) {
     const ref = doc(db, 'questions', existingId);
@@ -94,9 +94,18 @@ export async function saveQuestion(uid: string, input: QuestionInput, key: Answe
     return existingId;
   }
   const ref = doc(collection(db, 'questions'));
-  await setDoc(ref, clean({ ...input, bankId: 'default', createdBy: uid, version: 1, createdAt: now, updatedAt: now }));
+  await setDoc(ref, clean({ ...input, bankId, createdBy: uid, version: 1, createdAt: now, updatedAt: now }));
   await setDoc(doc(db, 'questions', ref.id, 'secrets', 'answerKey'), clean(key));
   return ref.id;
+}
+
+/** Move a question to a different bank (bumps version to satisfy Firestore rules). */
+export async function moveQuestionToBank(questionId: string, newBankId: string): Promise<void> {
+  const ref = doc(db, 'questions', questionId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error('Question not found');
+  const current = snap.data() as { version: number };
+  await updateDoc(ref, { bankId: newBankId, version: current.version + 1, updatedAt: Timestamp.now() });
 }
 
 /** Exams (of this examiner) whose pools reference the question. */

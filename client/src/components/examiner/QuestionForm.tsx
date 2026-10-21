@@ -9,6 +9,8 @@ import { cn } from '../../lib/utils';
 
 interface Props {
   initial?: { question: Question; key: AnswerKey };
+  /** Bank to place the new question in (ignored when editing). */
+  bankId?: string;
   onSaved: () => void;
   onCancel: () => void;
 }
@@ -17,7 +19,7 @@ type TC = { input: string; expectedOutput: string; weight: string; explanation: 
 const blankTc = (): TC => ({ input: '', expectedOutput: '', weight: '1', explanation: '' });
 const toTc = (t: TestCase): TC => ({ input: t.input, expectedOutput: t.expectedOutput, weight: String(t.weight), explanation: t.explanation ?? '' });
 
-export function QuestionForm({ initial, onSaved, onCancel }: Props) {
+export function QuestionForm({ initial, bankId = 'default', onSaved, onCancel }: Props) {
   const { user } = useAuth();
   const q = initial?.question;
   const k = initial?.key;
@@ -110,7 +112,7 @@ export function QuestionForm({ initial, onSaved, onCancel }: Props) {
 
     setSaving(true);
     try {
-      await saveQuestion(user.uid, input, key, q?.id);
+      await saveQuestion(user.uid, input, key, q?.id, bankId);
       onSaved();
     } catch (e) {
       setError((e as Error).message || 'Failed to save');

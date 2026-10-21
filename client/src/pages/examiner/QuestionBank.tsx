@@ -3,7 +3,7 @@ import { ArrowLeft, ChevronDown, Folder, Pencil, Plus, Search, Trash2 } from 'lu
 import { ExaminerLayout } from '../../components/examiner/ExaminerLayout';
 import { QuestionForm } from '../../components/examiner/QuestionForm';
 import { useAuth } from '../../auth/AuthProvider';
-import { deleteQuestion, examsUsingQuestion, listExams, listQuestions, loadQuestion, moveQuestionToBank } from '../../lib/examinerData';
+import { deleteQuestion, examsUsingQuestion, listExams, listQuestions, loadQuestion, moveQuestionsToBank, moveQuestionToBank } from '../../lib/examinerData';
 import type { AnswerKey, Exam, Question } from '../../types/examiner';
 import { btnGhost, btnPrimary, btnSmall, card, input } from '../../components/ui/styles';
 import { cn } from '../../lib/utils';
@@ -24,6 +24,8 @@ export function QuestionBank() {
   const [typeFilter, setTypeFilter] = useState<'all' | Question['type']>('all');
   const [editor, setEditor] = useState<null | { question: Question; key: AnswerKey } | 'new'>(null);
   const [movingId, setMovingId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isBatchMoving, setIsBatchMoving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -111,6 +113,51 @@ export function QuestionBank() {
       setError((err as Error).message || 'Failed to move question.');
     } finally {
       setMovingId(null);
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (filtered.length === 0) return;
+    const allFilteredSelected = filtered.every((q) => selectedIds.has(q.id));
+    if (allFilteredSelected) {
+      const next = new Set(selectedIds);
+      for (const q of filtered) next.delete(q.id);
+      setSelectedIds(next);
+    } else {
+      const next = new Set(selectedIds);
+      for (const q of filtered) next.add(q.id);
+      setSelectedIds(next);
+    }
+  };
+
+  const handleBatchMove = async (targetBankId: string) => {
+    if (selectedIds.size === 0) return;
+    let target = targetBankId;
+    if (target === '__new__') {
+      const custom = prompt('Enter new topic / exam name:');
+      if (!custom?.trim()) return;
+      target = custom.trim();
+    }
+
+    setIsBatchMoving(true);
+    setError(null);
+    try {
+      await moveQuestionsToBank(Array.from(selectedIds), target);
+      setSelectedIds(new Set());
+      await refresh();
+    } catch (err) {
+      setError((err as Error).message || 'Failed to move selected questions.');
+    } finally {
+      setIsBatchMoving(false);
     }
   };
 
@@ -225,27 +272,113 @@ export function QuestionBank() {
           {questions === null && !error && <p className="mt-6 animate-pulse text-slate-400">Loading…</p>}
 
           <div className={cn(card, 'mt-5 divide-y divide-slate-100 overflow-hidden')}>
+            {/* Select-all and bulk action bar */}
+            {filtered.length > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50/90 px-5 py-3 text-xs">
+                <label className="flex cursor-pointer select-none items-center gap-2.5 font-medium text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={filtered.length > 0 && filtered.every((q) => selectedIds.has(q.id))}
+                    ref={(el) => {
+                      if (el) {
+                        const some = filtered.some((q) => selectedIds.has(q.id));
+                        const all = filtered.every((q) => selectedIds.has(q.id));
+                        el.indeterminate = some && !all;
+                      }
+                    }}
+                    onChange={toggleSelectAll}
+                    className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-primary-600 focus:ring-primary-500"
+                  />
+                  <span>
+                    {selectedIds.size > 0 ? (
+                      <span className="font-semibold text-primary-700">
+                        {selectedIds.size} of {filtered.length} selected
+                      </span>
+                    ) : (
+                      'Select all'
+                    )}
+                  </span>
+                </label>
+
+                {selectedIds.size > 0 && (
+                  <div className="flex items-center gap-2">
+                    <div className="relative inline-flex items-center">
+                      <select
+                        disabled={isBatchMoving}
+                        value=""
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val) void handleBatchMove(val);
+                        }}
+                        title="Move selected questions to another exam or topic"
+                        className={cn(
+                          btnSmall,
+                          'cursor-pointer py-1.5 pr-7 font-semibold text-primary-700 bg-white border-primary-300 hover:bg-primary-50/50 appearance-none shadow-xs',
+                          isBatchMoving && 'opacity-50 pointer-events-none',
+                        )}
+                      >
+                        <option value="" disabled>
+                          {isBatchMoving ? 'Moving…' : `Move ${selectedIds.size} selected to…`}
+                        </option>
+                        {exams.map((ex) => (
+                          <option key={ex.id} value={ex.id}>
+                            {ex.title}
+                          </option>
+                        ))}
+                        <option value="default">General / Unassigned</option>
+                        <option value="__new__">+ New topic / exam…</option>
+                      </select>
+                      <ChevronDown className="pointer-events-none absolute right-2 h-3.5 w-3.5 text-primary-600" />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedIds(new Set())}
+                      className="cursor-pointer text-xs font-medium text-slate-500 hover:text-slate-800 px-1.5 py-1"
+                    >
+                      Deselect
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
             {filtered.map((q) => (
-              <div key={q.id} className="flex items-center justify-between gap-4 px-5 py-4 transition-colors duration-150 hover:bg-slate-50/80">
-                <div className="min-w-0">
-                  <p className="truncate font-semibold text-slate-900">{q.title}</p>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
-                    <span className="rounded-md bg-slate-100 px-2 py-0.5 font-medium text-slate-700 ring-1 ring-inset ring-slate-200/80">{TYPE_LABEL[q.type]}</span>
-                    <span className={cn('rounded-md px-2 py-0.5 font-medium capitalize', DIFF_TONE[q.difficulty])}>{q.difficulty}</span>
-                    <span className="text-slate-500">{q.points} pts · v{q.version}</span>
-                    <span className="inline-flex items-center gap-1 rounded-md bg-primary-50 px-2 py-0.5 font-medium text-primary-700 ring-1 ring-inset ring-primary-200/60">
-                      Exam: {getCategoryLabel(q.bankId)}
-                    </span>
-                    {q.tags.map((t) => (
-                      <span key={t} className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-600">#{t}</span>
-                    ))}
+              <div
+                key={q.id}
+                className={cn(
+                  'flex items-center justify-between gap-4 px-5 py-4 transition-colors duration-150 hover:bg-slate-50/80',
+                  selectedIds.has(q.id) && 'bg-primary-50/30',
+                )}
+              >
+                <div className="flex min-w-0 flex-1 items-center gap-3.5">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(q.id)}
+                    onChange={() => toggleSelect(q.id)}
+                    aria-label={`Select ${q.title}`}
+                    className="h-4 w-4 shrink-0 cursor-pointer rounded border-slate-300 accent-primary-600 focus:ring-primary-500"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-semibold text-slate-900">{q.title}</p>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
+                      <span className="rounded-md bg-slate-100 px-2 py-0.5 font-medium text-slate-700 ring-1 ring-inset ring-slate-200/80">{TYPE_LABEL[q.type]}</span>
+                      <span className={cn('rounded-md px-2 py-0.5 font-medium capitalize', DIFF_TONE[q.difficulty])}>{q.difficulty}</span>
+                      <span className="text-slate-500">{q.points} pts · v{q.version}</span>
+                      <span className="inline-flex items-center gap-1 rounded-md bg-primary-50 px-2 py-0.5 font-medium text-primary-700 ring-1 ring-inset ring-primary-200/60">
+                        Exam: {getCategoryLabel(q.bankId)}
+                      </span>
+                      {q.tags.map((t) => (
+                        <span key={t} className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-600">#{t}</span>
+                      ))}
+                    </div>
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   {/* Move question to another exam/category */}
                   <div className="relative inline-flex items-center">
                     <select
-                      disabled={movingId === q.id}
+                      disabled={movingId === q.id || isBatchMoving}
                       value=""
                       onChange={(e) => {
                         const val = e.target.value;
@@ -256,7 +389,7 @@ export function QuestionBank() {
                       className={cn(
                         btnSmall,
                         'cursor-pointer py-1.5 pr-7 text-slate-600 bg-white hover:bg-slate-50 appearance-none font-medium',
-                        movingId === q.id && 'opacity-50 pointer-events-none',
+                        (movingId === q.id || isBatchMoving) && 'opacity-50 pointer-events-none',
                       )}
                     >
                       <option value="" disabled>

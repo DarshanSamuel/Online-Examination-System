@@ -108,6 +108,11 @@ export async function moveQuestionToBank(questionId: string, newBankId: string):
   await updateDoc(ref, { bankId: newBankId, version: current.version + 1, updatedAt: Timestamp.now() });
 }
 
+/** Move multiple questions to a different bank. */
+export async function moveQuestionsToBank(questionIds: string[], newBankId: string): Promise<void> {
+  await Promise.all(questionIds.map((id) => moveQuestionToBank(id, newBankId)));
+}
+
 /** Exams (of this examiner) whose pools reference the question. */
 export async function examsUsingQuestion(uid: string, questionId: string): Promise<string[]> {
   const exams = await listExams(uid);

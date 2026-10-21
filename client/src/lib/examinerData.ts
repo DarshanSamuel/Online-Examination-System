@@ -11,6 +11,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { api } from './api';
 import type { Assignment, AnswerKey, Exam, Question, QuestionInput, Submission } from '../types/examiner';
 
 /** Firestore rejects `undefined`; strip it recursively while preserving Firestore Timestamps. */
@@ -181,7 +182,21 @@ export async function assignCandidates(exam: Exam, emails: string[], examinerUid
   );
 }
 
-export const removeAssignment = (a: Assignment) => deleteDoc(doc(db, 'assignments', a.id));
+export async function removeAssignment(a: Assignment) {
+  try {
+    await deleteDoc(doc(db, 'assignments', a.id));
+  } catch {
+    await api.delete(`/examiner/exams/${a.examId}/assignments/${encodeURIComponent(a.id)}`);
+  }
+}
+
+export async function batchRemoveAssignments(examId: string, assignmentIds: string[]) {
+  try {
+    await Promise.all(assignmentIds.map((id) => deleteDoc(doc(db, 'assignments', id))));
+  } catch {
+    await api.post(`/examiner/exams/${examId}/assignments/batch-remove`, { assignmentIds });
+  }
+}
 
 /* ───────────────────────────── results ───────────────────────────── */
 

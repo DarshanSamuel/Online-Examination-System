@@ -7,7 +7,7 @@ import { AttemptTrendBadge, AttemptTrendChart, getResolvedAttempts, type Normali
 import { useAuth } from '../../auth/AuthProvider';
 import { api, apiErrorMessage } from '../../lib/api';
 import { db } from '../../lib/firebase';
-import { asTimestamp, assignCandidates, deleteDraftExam, downloadText, listQuestions, normalizeExam, parseEmails, removeAssignment, resultsToCsv, setExamStatus } from '../../lib/examinerData';
+import { asTimestamp, assignCandidates, batchRemoveAssignments, deleteDraftExam, downloadText, listQuestions, normalizeExam, parseEmails, removeAssignment, resultsToCsv, setExamStatus } from '../../lib/examinerData';
 import type { Assignment, Exam, SimilarityReport, Submission } from '../../types/examiner';
 import { btnDanger, btnGhost, btnPrimary, btnSmall, card, input, statusTone } from '../../components/ui/styles';
 import { cn } from '../../lib/utils';
@@ -123,7 +123,11 @@ function CandidatesTab({ exam }: { exam: Exam }) {
   const [items, setItems] = useState<Assignment[]>([]);
   const [raw, setRaw] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [search, setSearch] = useState('');
 
   useEffect(
     () =>
@@ -139,15 +143,99 @@ function CandidatesTab({ exam }: { exam: Exam }) {
     const existing = new Set(items.map((i) => i.candidateEmail));
     const fresh = valid.filter((e) => !existing.has(e));
     setBusy(true);
+    setErrorMsg(null);
     try {
       await assignCandidates(exam, fresh, user.uid);
       setMsg(`Assigned ${fresh.length}${valid.length - fresh.length ? `, ${valid.length - fresh.length} already assigned` : ''}${invalid.length ? `, ignored invalid: ${invalid.join(', ')}` : ''}.`);
       setRaw('');
     } catch {
-      setMsg('Could not assign candidates.');
+      setErrorMsg('Could not assign candidates.');
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleRemoveOne = async (a: Assignment) => {
+    if (a.status !== 'assigned') {
+      if (!confirm(`Candidate "${a.candidateEmail}" has already ${a.status.replace('_', ' ')} the exam. Removing them will revoke their access to take or reattempt this exam. Continue?`)) {
+        return;
+      }
+    } else {
+      if (!confirm(`Remove "${a.candidateEmail}" from this exam?`)) {
+        return;
+      }
+    }
+
+    setDeletingId(a.id);
+    setErrorMsg(null);
+    setMsg(null);
+    try {
+      await removeAssignment(a);
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(a.id);
+        return next;
+      });
+      setMsg(`Removed ${a.candidateEmail} from assigned list.`);
+    } catch {
+      setErrorMsg(`Could not remove ${a.candidateEmail}. Please try again.`);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleBatchRemove = async () => {
+    if (selectedIds.size === 0) return;
+    const count = selectedIds.size;
+    if (!confirm(`Are you sure you want to remove ${count} candidate${count === 1 ? '' : 's'} from this exam? They will no longer have access to this exam.`)) {
+      return;
+    }
+
+    setBusy(true);
+    setErrorMsg(null);
+    setMsg(null);
+    try {
+      await batchRemoveAssignments(exam.id, Array.from(selectedIds));
+      setSelectedIds(new Set());
+      setMsg(`Successfully removed ${count} candidate${count === 1 ? '' : 's'}.`);
+    } catch {
+      setErrorMsg(`Failed to remove selected candidates. Please try again.`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return items;
+    const q = search.toLowerCase();
+    return items.filter((i) => i.candidateEmail.toLowerCase().includes(q));
+  }, [items, search]);
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every((i) => selectedIds.has(i.id));
+
+  const toggleSelectAll = () => {
+    if (allFilteredSelected) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        filtered.forEach((i) => next.delete(i.id));
+        return next;
+      });
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        filtered.forEach((i) => next.add(i.id));
+        return next;
+      });
+    }
+  };
+
+  const toggleSelectOne = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
   const link = `${window.location.origin}/`;
@@ -162,6 +250,7 @@ function CandidatesTab({ exam }: { exam: Exam }) {
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />} Assign
         </button>
         {msg && <p className="animate-tab-enter mt-3 text-xs font-medium text-primary-700">{msg}</p>}
+        {errorMsg && <p className="animate-tab-enter mt-3 text-xs font-medium text-red-600">{errorMsg}</p>}
         <div className="mt-5 rounded-xl border border-slate-200/70 bg-slate-50/80 p-3.5 text-xs text-slate-600">
           <p className="mb-1.5 font-medium text-slate-700">Share this link with candidates</p>
           <div className="flex items-center gap-2">
@@ -173,22 +262,92 @@ function CandidatesTab({ exam }: { exam: Exam }) {
       </div>
 
       <div className={cn(card, 'overflow-hidden')}>
-        <div className="border-b border-slate-100 px-5 py-3.5 text-sm font-semibold text-slate-900">{items.length} assigned</div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3.5">
+          <div className="flex items-center gap-3">
+            <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-slate-900">
+              <input
+                type="checkbox"
+                checked={allFilteredSelected}
+                onChange={toggleSelectAll}
+                disabled={filtered.length === 0}
+                className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+              />
+              <span>{items.length} assigned</span>
+            </label>
+            {selectedIds.size > 0 && (
+              <span className="rounded-full bg-primary-50 px-2 py-0.5 text-xs font-semibold text-primary-700 ring-1 ring-inset ring-primary-200">
+                {selectedIds.size} selected
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            {selectedIds.size > 0 && (
+              <button
+                type="button"
+                onClick={handleBatchRemove}
+                disabled={busy}
+                className={cn(btnSmall, 'bg-red-50 text-red-700 hover:bg-red-100 ring-1 ring-inset ring-red-200 cursor-pointer')}
+              >
+                {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                Remove selected ({selectedIds.size})
+              </button>
+            )}
+          </div>
+        </div>
+
+        {items.length > 5 && (
+          <div className="border-b border-slate-100 px-5 py-2">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search assigned candidate email…"
+              className="w-full bg-transparent text-xs text-slate-800 placeholder-slate-400 focus:outline-none"
+            />
+          </div>
+        )}
+
         <div className="divide-y divide-slate-100">
-          {items.map((a) => (
-            <div key={a.id} className="flex items-center justify-between px-5 py-3.5 text-sm transition-colors hover:bg-slate-50/80">
-              <span className="truncate font-medium text-slate-800">{a.candidateEmail}</span>
-              <div className="flex items-center gap-3">
-                <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-medium', statusTone[a.status])}>{a.status}</span>
-                {a.status === 'assigned' && (
-                  <button className="cursor-pointer rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600" title="Remove" onClick={() => void removeAssignment(a)}>
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+          {filtered.map((a) => {
+            const isSelected = selectedIds.has(a.id);
+            const isDeleting = deletingId === a.id;
+            return (
+              <div
+                key={a.id}
+                className={cn(
+                  'flex items-center justify-between px-5 py-3.5 text-sm transition-colors hover:bg-slate-50/80',
+                  isSelected && 'bg-primary-50/30',
                 )}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => toggleSelectOne(a.id)}
+                    className="h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                  />
+                  <span className="truncate font-medium text-slate-800">{a.candidateEmail}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-medium', statusTone[a.status])}>{a.status.replace('_', ' ')}</span>
+                  <button
+                    type="button"
+                    disabled={isDeleting || busy}
+                    className="cursor-pointer rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 active:scale-95 disabled:opacity-50"
+                    title={`Remove ${a.candidateEmail} from exam`}
+                    onClick={() => handleRemoveOne(a)}
+                  >
+                    {isDeleting ? <Loader2 className="h-4 w-4 animate-spin text-red-600" /> : <Trash2 className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           {items.length === 0 && <p className="px-5 py-12 text-center text-slate-400">Nobody assigned yet.</p>}
+          {items.length > 0 && filtered.length === 0 && (
+            <p className="px-5 py-8 text-center text-xs text-slate-400">No candidates matching "{search}"</p>
+          )}
         </div>
       </div>
     </div>

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { collections } from '../config/firebase.js';
+import { collections, db } from '../config/firebase.js';
 import { HttpError } from '../lib/errors.js';
 import { currentUser, requireAuth, requireRole, userRateLimit } from '../middleware/auth.js';
 import { finalizeAttempt } from '../services/attempts/lifecycle.js';
@@ -39,4 +39,33 @@ examinerRouter.post('/submissions/:submissionId/terminate', async (req, res) => 
   const id = docId.parse(req.params.submissionId);
   await ownedSubmission(id, currentUser(req).uid);
   res.json(await finalizeAttempt(id, 'examiner_terminated'));
+});
+
+/** Remove a single assigned candidate from an exam. */
+examinerRouter.delete('/exams/:examId/assignments/:assignmentId', async (req, res) => {
+  const examId = docId.parse(req.params.examId);
+  const assignmentId = String(req.params.assignmentId);
+  await assertExamOwner(examId, currentUser(req).uid);
+  const asgRef = collections.assignments.doc(assignmentId);
+  const snap = await asgRef.get();
+  if (snap.exists) {
+    await asgRef.delete();
+  }
+  res.json({ success: true });
+});
+
+/** Batch remove assigned candidates from an exam. */
+examinerRouter.post('/exams/:examId/assignments/batch-remove', async (req, res) => {
+  const examId = docId.parse(req.params.examId);
+  const { assignmentIds } = req.body as { assignmentIds?: string[] };
+  if (!Array.isArray(assignmentIds) || assignmentIds.length === 0) {
+    throw new HttpError(400, 'assignmentIds array is required', 'INVALID_INPUT');
+  }
+  await assertExamOwner(examId, currentUser(req).uid);
+  const batch = db.batch();
+  for (const id of assignmentIds) {
+    batch.delete(collections.assignments.doc(id));
+  }
+  await batch.commit();
+  res.json({ success: true, count: assignmentIds.length });
 });
